@@ -4,6 +4,11 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import {
+  DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor,
+  useSensor, useSensors, useDroppable, useDraggable, closestCorners,
+  type DragEndEvent, type DragStartEvent,
+} from '@dnd-kit/core'
+import {
   isoWeek, mondayOf, addDays, toISODate, DAGEN, formatDag,
 } from './week-utils'
 
@@ -19,12 +24,20 @@ type Block = {
 }
 
 const STATUS = [
-  { value: 'TODO', label: 'Te doen', dot: 'bg-gray-300' },
-  { value: 'DOING', label: 'Bezig', dot: 'bg-amber-400' },
-  { value: 'DONE', label: 'Klaar', dot: 'bg-green-500' },
-  { value: 'MASTERED', label: 'Beheerst', dot: 'bg-emerald-700' },
-  { value: 'SKIPPED', label: 'Vervallen', dot: 'bg-gray-200' },
+  { value: 'TODO', label: 'Te doen' },
+  { value: 'DOING', label: 'Bezig' },
+  { value: 'DONE', label: 'Klaar' },
+  { value: 'MASTERED', label: 'Beheerst' },
+  { value: 'SKIPPED', label: 'Vervallen' },
 ]
+
+function hexToRgba(hex: string, alpha: number) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16)
+  const g = parseInt(h.substring(2, 4), 16)
+  const b = parseInt(h.substring(4, 6), 16)
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'
+}
 
 export default function WeekBoard({
   householdId,
@@ -47,18 +60,25 @@ export default function WeekBoard({
   const [addDate, setAddDate] = useState<string | null>(null)
   const [taskId, setTaskId] = useState(tasks[0]?.id ?? '')
   const [duration, setDuration] = useState(30)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [lokaal, setLokaal] = useState<Block[]>(blocks)
 
   const monday = new Date(mondayISO + 'T00:00:00')
   const dagen = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
   const week = isoWeek(monday)
   const vandaag = toISODate(new Date())
 
-  const subjectOf = (t: Task) => subjects.find((s) => s.id === t.subject_id)
+  const subjectOf = (t?: Task) => subjects.find((s) => s.id === t?.subject_id)
   const taskOf = (b: Block) => tasks.find((t) => t.id === b.task_id)
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor),
+  )
+
   function ga(offset: number) {
-    const nieuw = addDays(monday, offset * 7)
-    router.push('/week?start=' + toISODate(nieuw))
+    router.push('/week?start=' + toISODate(addDays(monday, offset * 7)))
   }
 
   async function voegToe(datum: string | null) {
@@ -69,7 +89,6 @@ export default function WeekBoard({
     setBusy(true)
     setError('')
     const supabase = createClient()
-
     const { error } = await supabase.from('study_blocks').insert({
       household_id: householdId,
       student_id: studentId,
@@ -78,29 +97,43 @@ export default function WeekBoard({
       duration_minutes: duration,
       position_key: Date.now() % 1000000,
     })
-
     if (error) setError(error.message)
-    else {
-      setAddDate(null)
-      router.refresh()
-    }
+    else { setAddDate(null); router.refresh() }
     setBusy(false)
   }
 
-  async function verplaats(id: string, datum: string | null) {
+  async function dupliceer(b: Block) {
+    if (!studentId) return
     setBusy(true)
     const supabase = createClient()
-    const { error } = await supabase
-      .from('study_blocks')
-      .update({ planned_date: datum, updated_at: new Date().toISOString() })
-      .eq('id', id)
+    const { error } = await supabase.from('study_blocks').insert({
+      household_id: householdId,
+      student_id: studentId,
+      task_id: b.task_id,
+      planned_date: b.planned_date,
+      duration_minutes: b.duration_minutes,
+      status: 'TODO',
+      position_key: (Date.now() % 1000000) + 1,
+    })
     if (error) setError(error.message)
     else router.refresh()
     setBusy(false)
   }
 
+  async function verplaats(id: string, datum: string | null) {
+    setLokaal((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, planned_date: datum } : b)))
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('study_blocks')
+      .update({ planned_date: datum, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) { setError(error.message); router.refresh() }
+    else router.refresh()
+  }
+
   async function zetStatus(id: string, status: string) {
-    setBusy(true)
+    setLokaal((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)))
     const supabase = createClient()
     const { error } = await supabase
       .from('study_blocks')
@@ -108,60 +141,100 @@ export default function WeekBoard({
       .eq('id', id)
     if (error) setError(error.message)
     else router.refresh()
-    setBusy(false)
   }
 
   async function verwijder(id: string) {
-    setBusy(true)
+    setLokaal((prev) => prev.filter((b) => b.id !== id))
     const supabase = createClient()
     const { error } = await supabase.from('study_blocks').delete().eq('id', id)
-    if (error) setError(error.message)
+    if (error) { setError(error.message); router.refresh() }
     else router.refresh()
-    setBusy(false)
   }
 
-  function BlokKaart({ b }: { b: Block }) {
+  function onDragEnd(e: DragEndEvent) {
+    setDragId(null)
+    const over = e.over
+    if (!over) return
+    const id = String(e.active.id)
+    const doel = String(over.id) === 'UNPLANNED' ? null : String(over.id)
+    const huidig = lokaal.find((b) => b.id === id)
+    if (!huidig || huidig.planned_date === doel) return
+    verplaats(id, doel)
+  }
+
+  function Kaart({ b, overlay }: { b: Block; overlay?: boolean }) {
     const t = taskOf(b)
-    const s = t ? subjectOf(t) : undefined
-    const st = STATUS.find((x) => x.value === b.status)
+    const s = subjectOf(t)
+    const kleur = s?.color ?? '#94a3b8'
+    const klaar = b.status === 'DONE' || b.status === 'MASTERED'
+
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+      id: b.id,
+      disabled: overlay,
+    })
 
     return (
-      <div className="rounded-lg border bg-white p-2 text-sm shadow-sm">
-        <div className="flex items-start gap-1.5">
-          <span
-            style={{ backgroundColor: s?.color ?? '#999' }}
-            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium leading-tight">
-              {t?.title ?? 'Onbekend'}
-            </p>
-            <p className="text-xs text-gray-400">
-              {s?.name} · {b.duration_minutes} min
-            </p>
+      <div
+        ref={overlay ? undefined : setNodeRef}
+        style={{
+          backgroundColor: hexToRgba(kleur, klaar ? 0.07 : 0.16),
+          borderColor: hexToRgba(kleur, 0.55),
+          borderLeft: '4px solid ' + kleur,
+          opacity: isDragging ? 0.35 : 1,
+        }}
+        className={
+          'rounded-lg border p-2 text-sm ' +
+          (overlay ? 'shadow-lg rotate-2 cursor-grabbing' : '')
+        }
+      >
+        <div
+          {...(overlay ? {} : listeners)}
+          {...(overlay ? {} : attributes)}
+          className={overlay ? '' : 'cursor-grab touch-none active:cursor-grabbing'}
+        >
+          <p className={'font-medium leading-tight ' + (klaar ? 'line-through opacity-60' : '')}>
+            {t?.title ?? 'Onbekend'}
+          </p>
+          <p className="text-xs opacity-70">
+            {s?.name} &middot; {b.duration_minutes} min
+          </p>
+        </div>
+
+        {!overlay && (
+          <div className="mt-2 flex items-center gap-1">
+            <select
+              value={b.status}
+              onChange={(e) => zetStatus(b.id, e.target.value)}
+              className="flex-1 rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
+            >
+              {STATUS.map((x) => (
+                <option key={x.value} value={x.value}>{x.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => dupliceer(b)}
+              disabled={busy}
+              title="Dupliceren"
+              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white"
+            >
+              &#43;&#43;
+            </button>
+            <button
+              onClick={() => verwijder(b.id)}
+              disabled={busy}
+              title="Verwijderen"
+              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white hover:text-red-600"
+            >
+              &times;
+            </button>
           </div>
-        </div>
+        )}
 
-        <div className="mt-2 flex items-center gap-1">
-          <span className={'h-2 w-2 rounded-full ' + (st?.dot ?? 'bg-gray-300')} />
-          <select
-            value={b.status}
-            onChange={(e) => zetStatus(b.id, e.target.value)}
-            disabled={busy}
-            className="flex-1 rounded border-0 bg-transparent p-0 text-xs text-gray-600"
-          >
-            {STATUS.map((x) => (
-              <option key={x.value} value={x.value}>{x.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mt-1.5 flex items-center gap-2">
+        {!overlay && (
           <select
             value={b.planned_date ?? ''}
             onChange={(e) => verplaats(b.id, e.target.value || null)}
-            disabled={busy}
-            className="flex-1 rounded border border-gray-200 px-1 py-0.5 text-xs"
+            className="mt-1.5 w-full rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
           >
             <option value="">Niet ingepland</option>
             {dagen.map((d, i) => (
@@ -170,15 +243,7 @@ export default function WeekBoard({
               </option>
             ))}
           </select>
-          <button
-            onClick={() => verwijder(b.id)}
-            disabled={busy}
-            aria-label="Verwijderen"
-            className="text-xs text-gray-400 hover:text-red-600"
-          >
-            ×
-          </button>
-        </div>
+        )}
       </div>
     )
   }
@@ -193,7 +258,7 @@ export default function WeekBoard({
         >
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
-              {subjectOf(t)?.name} — {t.title}
+              {subjectOf(t)?.name} &mdash; {t.title}
             </option>
           ))}
         </select>
@@ -214,18 +279,56 @@ export default function WeekBoard({
           >
             OK
           </button>
-          <button
-            onClick={() => setAddDate(null)}
-            className="rounded border px-2 py-1 text-xs"
-          >
-            ×
+          <button onClick={() => setAddDate(null)} className="rounded border px-2 py-1 text-xs">
+            &times;
           </button>
         </div>
       </div>
     )
   }
 
-  const nietIngepland = blocks.filter((b) => !b.planned_date)
+  function Kolom({
+    id, titel, subtitel, blokken, highlight,
+  }: {
+    id: string
+    titel: string
+    subtitel: string
+    blokken: Block[]
+    highlight?: boolean
+  }) {
+    const { setNodeRef, isOver } = useDroppable({ id })
+    return (
+      <div
+        ref={setNodeRef}
+        className={
+          'rounded-xl p-3 transition-colors ' +
+          (isOver ? 'bg-blue-100 ring-2 ring-blue-400'
+            : highlight ? 'bg-blue-50 ring-1 ring-blue-200' : 'bg-gray-50')
+        }
+      >
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold">{titel}</h2>
+          <span className="text-xs text-gray-400">{subtitel}</span>
+        </div>
+        <div className="mt-2 min-h-[60px] space-y-2">
+          {blokken.map((b) => <Kaart key={b.id} b={b} />)}
+          {addDate === id ? (
+            <ToevoegForm datum={id === 'UNPLANNED' ? null : id} />
+          ) : (
+            <button
+              onClick={() => setAddDate(id)}
+              disabled={tasks.length === 0}
+              className="w-full rounded-lg border border-dashed py-1.5 text-xs text-gray-500 disabled:opacity-40"
+            >
+              + Blok
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const actief = dragId ? lokaal.find((b) => b.id === dragId) : null
 
   return (
     <div className="mt-2">
@@ -237,18 +340,14 @@ export default function WeekBoard({
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => ga(-1)} className="rounded-lg border px-3 py-1.5 text-sm">
-            Vorige
-          </button>
+          <button onClick={() => ga(-1)} className="rounded-lg border px-3 py-1.5 text-sm">Vorige</button>
           <button
             onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))}
             className="rounded-lg border px-3 py-1.5 text-sm"
           >
             Deze week
           </button>
-          <button onClick={() => ga(1)} className="rounded-lg border px-3 py-1.5 text-sm">
-            Volgende
-          </button>
+          <button onClick={() => ga(1)} className="rounded-lg border px-3 py-1.5 text-sm">Volgende</button>
         </div>
       </div>
 
@@ -256,71 +355,39 @@ export default function WeekBoard({
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       )}
 
-      {tasks.length === 0 && (
-        <p className="mt-3 rounded-lg border p-3 text-sm text-gray-500">
-          Nog geen taken. Maak ze eerst aan bij Taken.
-        </p>
-      )}
-
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl bg-gray-50 p-3 lg:row-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Niet ingepland</h2>
-            <span className="text-xs text-gray-400">{nietIngepland.length}</span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {nietIngepland.map((b) => <BlokKaart key={b.id} b={b} />)}
-            {addDate === 'NULL' ? (
-              <ToevoegForm datum={null} />
-            ) : (
-              <button
-                onClick={() => setAddDate('NULL')}
-                disabled={tasks.length === 0}
-                className="w-full rounded-lg border border-dashed py-1.5 text-xs text-gray-500 disabled:opacity-40"
-              >
-                + Blok
-              </button>
-            )}
-          </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => setDragId(null)}
+      >
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Kolom
+            id="UNPLANNED"
+            titel="Niet ingepland"
+            subtitel={String(lokaal.filter((b) => !b.planned_date).length)}
+            blokken={lokaal.filter((b) => !b.planned_date)}
+          />
+          {dagen.map((d, i) => {
+            const iso = toISODate(d)
+            return (
+              <Kolom
+                key={iso}
+                id={iso}
+                titel={DAGEN[i]}
+                subtitel={formatDag(d)}
+                blokken={lokaal.filter((b) => b.planned_date === iso)}
+                highlight={iso === vandaag}
+              />
+            )
+          })}
         </div>
 
-        {dagen.map((d, i) => {
-          const iso = toISODate(d)
-          const dagBlokken = blocks.filter((b) => b.planned_date === iso)
-          const isVandaag = iso === vandaag
-
-          return (
-            <div
-              key={iso}
-              className={
-                'rounded-xl p-3 ' +
-                (isVandaag ? 'bg-blue-50 ring-1 ring-blue-200' : 'bg-gray-50')
-              }
-            >
-              <div className="flex items-baseline justify-between">
-                <h2 className="text-sm font-semibold">{DAGEN[i]}</h2>
-                <span className="text-xs text-gray-400">{formatDag(d)}</span>
-              </div>
-
-              <div className="mt-2 space-y-2">
-                {dagBlokken.map((b) => <BlokKaart key={b.id} b={b} />)}
-
-                {addDate === iso ? (
-                  <ToevoegForm datum={iso} />
-                ) : (
-                  <button
-                    onClick={() => setAddDate(iso)}
-                    disabled={tasks.length === 0}
-                    className="w-full rounded-lg border border-dashed py-1.5 text-xs text-gray-500 disabled:opacity-40"
-                  >
-                    + Blok
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+        <DragOverlay>
+          {actief ? <Kaart b={actief} overlay /> : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   )
 }
