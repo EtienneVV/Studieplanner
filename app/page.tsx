@@ -35,12 +35,20 @@ export default async function Home() {
         <HouseholdSetup />
       )}
 
-      <Link
-        href="/vakken"
-        className="mt-6 inline-block rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
-      >
-        Vakken beheren
-      </Link>
+      <div className="mt-6 flex gap-2">
+        <Link
+          href="/vakken"
+          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+        >
+          Vakken
+        </Link>
+        <Link
+          href="/taken"
+          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+        >
+          Taken
+        </Link>
+      </div>
 
       <form action="/auth/signout" method="post" className="mt-6">
         <button className="text-sm text-gray-500 underline">Uitloggen</button>
