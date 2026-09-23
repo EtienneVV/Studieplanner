@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import HouseholdSetup from './household-setup'
 
 export default async function Home() {
@@ -33,6 +34,13 @@ export default async function Home() {
       ) : (
         <HouseholdSetup />
       )}
+
+      <Link
+        href="/vakken"
+        className="mt-6 inline-block rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+      >
+        Vakken beheren
+      </Link>
 
       <form action="/auth/signout" method="post" className="mt-6">
         <button className="text-sm text-gray-500 underline">Uitloggen</button>
