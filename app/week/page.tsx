@@ -56,6 +56,20 @@ export default async function WeekPage({
     .or('planned_date.is.null,and(planned_date.gte.' + toISODate(monday) + ',planned_date.lte.' + toISODate(sunday) + ')')
     .order('position_key')
 
+  const { data: assessments } = await supabase
+    .from('assessments')
+    .select('id, title, date, weight, syllabus, date_confidence, subject_id')
+    .gte('date', toISODate(monday))
+    .lte('date', toISODate(sunday))
+    .order('date')
+
+  const { data: komende } = await supabase
+    .from('assessments')
+    .select('id, title, date, subject_id, date_confidence')
+    .gt('date', toISODate(sunday))
+    .order('date')
+    .limit(5)
+
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6">
       <Link href="/" className="text-sm text-gray-500 underline">Terug</Link>
@@ -66,6 +80,8 @@ export default async function WeekPage({
         subjects={subjects ?? []}
         tasks={tasks ?? []}
         blocks={blocks ?? []}
+        assessments={assessments ?? []}
+        komende={komende ?? []}
       />
     </main>
   )

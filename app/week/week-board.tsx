@@ -22,6 +22,15 @@ type Block = {
   status: string
   position_key: number
 }
+type Assessment = {
+  id: string
+  title: string
+  date: string | null
+  weight?: number | null
+  syllabus?: string | null
+  date_confidence: string
+  subject_id: string
+}
 
 const STATUS = [
   { value: 'TODO', label: 'Te doen' },
@@ -39,6 +48,14 @@ function hexToRgba(hex: string, alpha: number) {
   return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'
 }
 
+function dagenTot(datum: string | null): number | null {
+  if (!datum) return null
+  const vandaag = new Date()
+  vandaag.setHours(0, 0, 0, 0)
+  const doel = new Date(datum + 'T00:00:00')
+  return Math.round((doel.getTime() - vandaag.getTime()) / 86400000)
+}
+
 export default function WeekBoard({
   householdId,
   studentId,
@@ -46,6 +63,8 @@ export default function WeekBoard({
   subjects,
   tasks,
   blocks,
+  assessments,
+  komende,
 }: {
   householdId: string
   studentId: string | null
@@ -53,6 +72,8 @@ export default function WeekBoard({
   subjects: Subject[]
   tasks: Task[]
   blocks: Block[]
+  assessments: Assessment[]
+  komende: Assessment[]
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -63,7 +84,6 @@ export default function WeekBoard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [lokaal, setLokaal] = useState<Block[]>(blocks)
 
-  // Synchroniseer met de server na elke router.refresh()
   useEffect(() => {
     setLokaal(blocks)
   }, [blocks])
@@ -74,6 +94,7 @@ export default function WeekBoard({
   const vandaag = toISODate(new Date())
 
   const subjectOf = (t?: Task) => subjects.find((s) => s.id === t?.subject_id)
+  const subjectById = (id: string) => subjects.find((s) => s.id === id)
   const taskOf = (b: Block) => tasks.find((t) => t.id === b.task_id)
 
   const sensors = useSensors(
@@ -129,9 +150,8 @@ export default function WeekBoard({
       .select()
       .single()
 
-    if (error) {
-      setError(error.message)
-    } else if (data) {
+    if (error) setError(error.message)
+    else if (data) {
       setLokaal((prev) => [...prev, data as Block])
       router.refresh()
     }
@@ -178,6 +198,40 @@ export default function WeekBoard({
     const huidig = lokaal.find((b) => b.id === id)
     if (!huidig || huidig.planned_date === doel) return
     verplaats(id, doel)
+  }
+
+  function ToetsBanner({ a }: { a: Assessment }) {
+    const s = subjectById(a.subject_id)
+    const kleur = s?.color ?? '#dc2626'
+    const schatting = a.date_confidence === 'ESTIMATED'
+
+    return (
+      <div
+        style={{
+          backgroundColor: hexToRgba(kleur, 0.3),
+          borderColor: kleur,
+        }}
+        className="rounded-lg border-2 px-2 py-1.5"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">&#128221;</span>
+          <p className="min-w-0 flex-1 truncate text-xs font-bold uppercase tracking-wide">
+            Toets
+          </p>
+          {schatting && (
+            <span className="rounded bg-white/70 px-1 text-[10px]">?</span>
+          )}
+        </div>
+        <p className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</p>
+        <p className="text-xs opacity-80">
+          {s?.name}
+          {a.weight ? ' \u00b7 weging ' + a.weight : ''}
+        </p>
+        {a.syllabus && (
+          <p className="mt-0.5 text-xs opacity-70">{a.syllabus}</p>
+        )}
+      </div>
+    )
   }
 
   function Kaart({ b, overlay }: { b: Block; overlay?: boolean }) {
@@ -315,15 +369,18 @@ export default function WeekBoard({
   }
 
   function Kolom({
-    id, titel, subtitel, blokken, highlight,
+    id, titel, subtitel, blokken, toetsen, highlight,
   }: {
     id: string
     titel: string
     subtitel: string
     blokken: Block[]
+    toetsen: Assessment[]
     highlight?: boolean
   }) {
     const { setNodeRef, isOver } = useDroppable({ id })
+    const minuten = blokken.reduce((n, b) => n + b.duration_minutes, 0)
+
     return (
       <div
         ref={setNodeRef}
@@ -337,6 +394,17 @@ export default function WeekBoard({
           <h2 className="text-sm font-semibold">{titel}</h2>
           <span className="text-xs text-gray-400">{subtitel}</span>
         </div>
+
+        {minuten > 0 && (
+          <p className="text-xs text-gray-400">{minuten} min</p>
+        )}
+
+        {toetsen.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {toetsen.map((a) => <ToetsBanner key={a.id} a={a} />)}
+          </div>
+        )}
+
         <div className="mt-2 min-h-[60px] space-y-2">
           {blokken.map((b) => <Kaart key={b.id} b={b} />)}
           {addDate === id ? (
@@ -384,6 +452,28 @@ export default function WeekBoard({
         </div>
       </div>
 
+      {komende.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+            Komt eraan
+          </span>
+          {komende.map((a) => {
+            const s = subjectById(a.subject_id)
+            const d = dagenTot(a.date)
+            return (
+              <span
+                key={a.id}
+                style={{ backgroundColor: hexToRgba(s?.color ?? '#999', 0.25) }}
+                className="rounded px-2 py-0.5 text-xs"
+              >
+                {s?.name}: {a.title}
+                {d !== null && <span className="opacity-70"> &middot; over {d} dgn</span>}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       {error && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
       )}
@@ -401,6 +491,7 @@ export default function WeekBoard({
             titel="Niet ingepland"
             subtitel={String(lokaal.filter((b) => !b.planned_date).length)}
             blokken={lokaal.filter((b) => !b.planned_date)}
+            toetsen={[]}
           />
           {dagen.map((d, i) => {
             const iso = toISODate(d)
@@ -411,6 +502,7 @@ export default function WeekBoard({
                 titel={DAGEN[i]}
                 subtitel={formatDag(d)}
                 blokken={lokaal.filter((b) => b.planned_date === iso)}
+                toetsen={assessments.filter((a) => a.date === iso)}
                 highlight={iso === vandaag}
               />
             )
