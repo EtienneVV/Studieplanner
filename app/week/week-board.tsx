@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import {
@@ -63,6 +63,11 @@ export default function WeekBoard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [lokaal, setLokaal] = useState<Block[]>(blocks)
 
+  // Synchroniseer met de server na elke router.refresh()
+  useEffect(() => {
+    setLokaal(blocks)
+  }, [blocks])
+
   const monday = new Date(mondayISO + 'T00:00:00')
   const dagen = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
   const week = isoWeek(monday)
@@ -103,20 +108,33 @@ export default function WeekBoard({
   }
 
   async function dupliceer(b: Block) {
-    if (!studentId) return
+    if (!studentId) {
+      setError('Geen leerling gevonden.')
+      return
+    }
     setBusy(true)
+    setError('')
     const supabase = createClient()
-    const { error } = await supabase.from('study_blocks').insert({
-      household_id: householdId,
-      student_id: studentId,
-      task_id: b.task_id,
-      planned_date: b.planned_date,
-      duration_minutes: b.duration_minutes,
-      status: 'TODO',
-      position_key: (Date.now() % 1000000) + 1,
-    })
-    if (error) setError(error.message)
-    else router.refresh()
+    const { data, error } = await supabase
+      .from('study_blocks')
+      .insert({
+        household_id: householdId,
+        student_id: studentId,
+        task_id: b.task_id,
+        planned_date: b.planned_date,
+        duration_minutes: b.duration_minutes,
+        status: 'TODO',
+        position_key: b.position_key + 1,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      setError(error.message)
+    } else if (data) {
+      setLokaal((prev) => [...prev, data as Block])
+      router.refresh()
+    }
     setBusy(false)
   }
 
@@ -128,8 +146,8 @@ export default function WeekBoard({
       .from('study_blocks')
       .update({ planned_date: datum, updated_at: new Date().toISOString() })
       .eq('id', id)
-    if (error) { setError(error.message); router.refresh() }
-    else router.refresh()
+    if (error) setError(error.message)
+    router.refresh()
   }
 
   async function zetStatus(id: string, status: string) {
@@ -140,15 +158,15 @@ export default function WeekBoard({
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id)
     if (error) setError(error.message)
-    else router.refresh()
+    router.refresh()
   }
 
   async function verwijder(id: string) {
     setLokaal((prev) => prev.filter((b) => b.id !== id))
     const supabase = createClient()
     const { error } = await supabase.from('study_blocks').delete().eq('id', id)
-    if (error) { setError(error.message); router.refresh() }
-    else router.refresh()
+    if (error) setError(error.message)
+    router.refresh()
   }
 
   function onDragEnd(e: DragEndEvent) {
@@ -212,18 +230,22 @@ export default function WeekBoard({
               ))}
             </select>
             <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => dupliceer(b)}
               disabled={busy}
               title="Dupliceren"
-              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white"
+              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white disabled:opacity-40"
             >
               &#43;&#43;
             </button>
             <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => verwijder(b.id)}
               disabled={busy}
               title="Verwijderen"
-              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white hover:text-red-600"
+              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white hover:text-red-600 disabled:opacity-40"
             >
               &times;
             </button>
@@ -273,13 +295,18 @@ export default function WeekBoard({
             ))}
           </select>
           <button
+            type="button"
             onClick={() => voegToe(datum)}
             disabled={busy}
             className="rounded bg-black px-2 py-1 text-xs text-white disabled:opacity-50"
           >
             OK
           </button>
-          <button onClick={() => setAddDate(null)} className="rounded border px-2 py-1 text-xs">
+          <button
+            type="button"
+            onClick={() => setAddDate(null)}
+            className="rounded border px-2 py-1 text-xs"
+          >
             &times;
           </button>
         </div>
@@ -316,6 +343,7 @@ export default function WeekBoard({
             <ToevoegForm datum={id === 'UNPLANNED' ? null : id} />
           ) : (
             <button
+              type="button"
               onClick={() => setAddDate(id)}
               disabled={tasks.length === 0}
               className="w-full rounded-lg border border-dashed py-1.5 text-xs text-gray-500 disabled:opacity-40"
@@ -340,14 +368,19 @@ export default function WeekBoard({
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => ga(-1)} className="rounded-lg border px-3 py-1.5 text-sm">Vorige</button>
+          <button type="button" onClick={() => ga(-1)} className="rounded-lg border px-3 py-1.5 text-sm">
+            Vorige
+          </button>
           <button
+            type="button"
             onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))}
             className="rounded-lg border px-3 py-1.5 text-sm"
           >
             Deze week
           </button>
-          <button onClick={() => ga(1)} className="rounded-lg border px-3 py-1.5 text-sm">Volgende</button>
+          <button type="button" onClick={() => ga(1)} className="rounded-lg border px-3 py-1.5 text-sm">
+            Volgende
+          </button>
         </div>
       </div>
 
