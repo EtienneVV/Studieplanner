@@ -43,6 +43,12 @@ export default async function Home() {
           Weekbord
         </Link>
         <Link
+          href="/toetsen"
+          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+        >
+          Toetsen
+        </Link>
+        <Link
           href="/taken"
           className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
         >
