@@ -35,18 +35,24 @@ export default async function Home() {
         <HouseholdSetup />
       )}
 
-      <div className="mt-6 flex gap-2">
+      <div className="mt-6 flex flex-wrap gap-2">
         <Link
-          href="/vakken"
-          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+          href="/week"
+          className="rounded-lg bg-black px-4 py-2 font-medium text-white"
         >
-          Vakken
+          Weekbord
         </Link>
         <Link
           href="/taken"
           className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
         >
           Taken
+        </Link>
+        <Link
+          href="/vakken"
+          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+        >
+          Vakken
         </Link>
       </div>
 
