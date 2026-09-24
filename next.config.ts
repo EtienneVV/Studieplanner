@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+const nextConfig = {
+  allowedDevOrigins: ['192.168.178.234'], // vervang door jouw eigen IPv4-adres
+}
 
 export default nextConfig;

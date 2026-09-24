@@ -111,3 +111,11 @@ button, input, select, textarea {
     text-size-adjust: 100%;
   }
 }
+
+/* Voorkom een browserbrede (pagina-niveau) horizontale scrollbalk.
+   De weekplanner heeft bewust maar ÃŠÃŠn interne horizontale scroller
+   voor de dagen; dit blokkeert elke andere, ongewenste uitloop. */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
