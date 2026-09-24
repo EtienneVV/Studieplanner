@@ -31,26 +31,33 @@ export default async function TakenPage() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, notes, task_type, subject_id')
+    .select('id, title, notes, task_type, subject_id, assessment_id')
     .order('title')
+
+  const { data: assessments } = await supabase
+    .from('assessments')
+    .select('id, title, date, subject_id, date_confidence')
+    .order('date', { ascending: true, nullsFirst: false })
 
   return (
     <main className="mx-auto max-w-2xl p-6">
       <Link href="/" className="text-sm text-gray-500 underline">Terug</Link>
       <h1 className="mt-2 text-2xl font-semibold">Taken</h1>
       <p className="mt-1 text-sm text-gray-500">
-        Wat moet er gedaan worden per vak. Inplannen doe je later op het weekbord.
+        Wat moet er gedaan worden per vak. Koppel een taak aan een toets om te zien
+        hoeveel tijd je nog hebt.
       </p>
 
       {(!subjects || subjects.length === 0) ? (
         <p className="mt-6 rounded-lg border p-4 text-sm text-gray-500">
-          Voeg eerst vakken toe via <Link href="/vakken" className="underline">Vakken beheren</Link>.
+          Voeg eerst vakken toe via <Link href="/vakken" className="underline">Vakken</Link>.
         </p>
       ) : (
         <TaskManager
           householdId={householdId}
           subjects={subjects}
           initialTasks={tasks ?? []}
+          assessments={assessments ?? []}
         />
       )}
     </main>

@@ -47,7 +47,7 @@ export default async function WeekPage({
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, subject_id, task_type')
+    .select('id, title, subject_id, task_type, assessment_id')
     .order('title')
 
   const { data: blocks } = await supabase
@@ -56,19 +56,18 @@ export default async function WeekPage({
     .or('planned_date.is.null,and(planned_date.gte.' + toISODate(monday) + ',planned_date.lte.' + toISODate(sunday) + ')')
     .order('position_key')
 
-  const { data: assessments } = await supabase
+  const { data: alleToetsen } = await supabase
     .from('assessments')
     .select('id, title, date, weight, syllabus, date_confidence, subject_id')
-    .gte('date', toISODate(monday))
-    .lte('date', toISODate(sunday))
-    .order('date')
+    .order('date', { ascending: true, nullsFirst: false })
 
-  const { data: komende } = await supabase
-    .from('assessments')
-    .select('id, title, date, subject_id, date_confidence')
-    .gt('date', toISODate(sunday))
-    .order('date')
-    .limit(5)
+  const inDeWeek = (alleToetsen ?? []).filter(
+    (a) => a.date && a.date >= toISODate(monday) && a.date <= toISODate(sunday)
+  )
+
+  const komende = (alleToetsen ?? [])
+    .filter((a) => a.date && a.date > toISODate(sunday))
+    .slice(0, 5)
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6">
@@ -80,8 +79,9 @@ export default async function WeekPage({
         subjects={subjects ?? []}
         tasks={tasks ?? []}
         blocks={blocks ?? []}
-        assessments={assessments ?? []}
-        komende={komende ?? []}
+        assessments={inDeWeek}
+        komende={komende}
+        alleToetsen={alleToetsen ?? []}
       />
     </main>
   )

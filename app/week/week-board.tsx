@@ -13,7 +13,13 @@ import {
 } from './week-utils'
 
 type Subject = { id: string; name: string; color: string }
-type Task = { id: string; title: string; subject_id: string; task_type: string }
+type Task = {
+  id: string
+  title: string
+  subject_id: string
+  task_type: string
+  assessment_id: string | null
+}
 type Block = {
   id: string
   task_id: string
@@ -56,6 +62,14 @@ function dagenTot(datum: string | null): number | null {
   return Math.round((doel.getTime() - vandaag.getTime()) / 86400000)
 }
 
+function korteTel(n: number | null): string {
+  if (n === null) return ''
+  if (n < 0) return 'geweest'
+  if (n === 0) return 'vandaag!'
+  if (n === 1) return 'morgen!'
+  return 'nog ' + n + ' dgn'
+}
+
 export default function WeekBoard({
   householdId,
   studentId,
@@ -65,6 +79,7 @@ export default function WeekBoard({
   blocks,
   assessments,
   komende,
+  alleToetsen,
 }: {
   householdId: string
   studentId: string | null
@@ -74,6 +89,7 @@ export default function WeekBoard({
   blocks: Block[]
   assessments: Assessment[]
   komende: Assessment[]
+  alleToetsen: Assessment[]
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -96,6 +112,8 @@ export default function WeekBoard({
   const subjectOf = (t?: Task) => subjects.find((s) => s.id === t?.subject_id)
   const subjectById = (id: string) => subjects.find((s) => s.id === id)
   const taskOf = (b: Block) => tasks.find((t) => t.id === b.task_id)
+  const toetsVanTaak = (t?: Task) =>
+    t?.assessment_id ? alleToetsen.find((a) => a.id === t.assessment_id) : undefined
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -239,6 +257,10 @@ export default function WeekBoard({
     const s = subjectOf(t)
     const kleur = s?.color ?? '#94a3b8'
     const klaar = b.status === 'DONE' || b.status === 'MASTERED'
+    const toets = toetsVanTaak(t)
+    const d = toets ? dagenTot(toets.date) : null
+    const urgent = d !== null && d >= 0 && d <= 3
+    const binnenkort = d !== null && d > 3 && d <= 7
 
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
       id: b.id,
@@ -250,7 +272,8 @@ export default function WeekBoard({
         ref={overlay ? undefined : setNodeRef}
         style={{
           backgroundColor: hexToRgba(kleur, klaar ? 0.07 : 0.16),
-          borderColor: hexToRgba(kleur, 0.55),
+          borderColor: urgent && !klaar ? '#dc2626' : hexToRgba(kleur, 0.55),
+          borderWidth: urgent && !klaar ? '2px' : '1px',
           borderLeft: '4px solid ' + kleur,
           opacity: isDragging ? 0.35 : 1,
         }}
@@ -270,6 +293,27 @@ export default function WeekBoard({
           <p className="text-xs opacity-70">
             {s?.name} &middot; {b.duration_minutes} min
           </p>
+
+          {toets && !klaar && (
+            <div
+              className={
+                'mt-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ' +
+                (urgent
+                  ? 'bg-red-600 font-semibold text-white'
+                  : binnenkort
+                    ? 'bg-amber-200 font-medium text-amber-900'
+                    : 'bg-white/70')
+              }
+            >
+              <span>&#128221;</span>
+              <span className="min-w-0 flex-1 truncate">{toets.title}</span>
+              <span className="shrink-0">{korteTel(d)}</span>
+            </div>
+          )}
+
+          {toets && klaar && (
+            <p className="mt-1 text-xs opacity-50">&#128221; {toets.title}</p>
+          )}
         </div>
 
         {!overlay && (
@@ -313,9 +357,9 @@ export default function WeekBoard({
             className="mt-1.5 w-full rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
           >
             <option value="">Niet ingepland</option>
-            {dagen.map((d, i) => (
-              <option key={i} value={toISODate(d)}>
-                {DAGEN[i].slice(0, 2)} {formatDag(d)}
+            {dagen.map((d2, i) => (
+              <option key={i} value={toISODate(d2)}>
+                {DAGEN[i].slice(0, 2)} {formatDag(d2)}
               </option>
             ))}
           </select>
@@ -332,11 +376,15 @@ export default function WeekBoard({
           onChange={(e) => setTaskId(e.target.value)}
           className="w-full rounded border border-gray-200 px-1 py-1 text-xs"
         >
-          {tasks.map((t) => (
-            <option key={t.id} value={t.id}>
-              {subjectOf(t)?.name} &mdash; {t.title}
-            </option>
-          ))}
+          {tasks.map((t) => {
+            const a = toetsVanTaak(t)
+            return (
+              <option key={t.id} value={t.id}>
+                {subjectOf(t)?.name} &mdash; {t.title}
+                {a ? ' (toets: ' + korteTel(dagenTot(a.date)) + ')' : ''}
+              </option>
+            )
+          })}
         </select>
         <div className="mt-1.5 flex gap-1">
           <select
@@ -493,14 +541,14 @@ export default function WeekBoard({
             blokken={lokaal.filter((b) => !b.planned_date)}
             toetsen={[]}
           />
-          {dagen.map((d, i) => {
-            const iso = toISODate(d)
+          {dagen.map((d2, i) => {
+            const iso = toISODate(d2)
             return (
               <Kolom
                 key={iso}
                 id={iso}
                 titel={DAGEN[i]}
-                subtitel={formatDag(d)}
+                subtitel={formatDag(d2)}
                 blokken={lokaal.filter((b) => b.planned_date === iso)}
                 toetsen={assessments.filter((a) => a.date === iso)}
                 highlight={iso === vandaag}
