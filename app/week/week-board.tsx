@@ -157,7 +157,6 @@ export default function WeekBoard({
   function zetView(v: 'dag' | 'week') {
     setView(v)
     window.localStorage.setItem('weekview', v)
-
     if (v === 'week') {
       window.requestAnimationFrame(() => {
         const el = mobileWeekRef.current
@@ -225,7 +224,6 @@ export default function WeekBoard({
       })
       .select()
       .single()
-
     if (error) setError(error.message)
     else if (data) {
       setLokaal((prev) => [...prev, data as Block])
@@ -270,7 +268,6 @@ export default function WeekBoard({
     const s = subjectById(a.subject_id)
     const kleur = s?.color ?? '#dc2626'
     const schatting = a.date_confidence === 'ESTIMATED'
-
     return (
       <div
         style={{ ['--accent' as string]: kleur } as React.CSSProperties}
@@ -299,30 +296,25 @@ export default function WeekBoard({
     const [vTitel, setVTitel] = useState(b.title_override ?? '')
     const [vNote, setVNote] = useState(b.note ?? '')
     const [opslaan, setOpslaan] = useState(false)
-
     // '' = volg de taak, 'NONE' = bewust geen toets, anders een toets-id
     const [vToets, setVToets] = useState(
       b.assessment_manual ? (b.assessment_id ?? 'NONE') : ''
     )
-
     const gekozenTaak = tasks.find((t) => t.id === vTask)
     const gekozenVak = subjectOf(gekozenTaak)
     const taakToets = toetsVanTaak(gekozenTaak)
     const huidigeTaak = taskOf(b)
     const vakGewijzigd = gekozenTaak?.subject_id !== huidigeTaak?.subject_id
-
     const gekozenToets =
       vToets === '' ? taakToets
         : vToets === 'NONE' ? undefined
           : alleToetsen.find((a) => a.id === vToets)
-
     // Toetsen van het gekozen vak die nog niet geweest zijn
     const vakToetsen = alleToetsen.filter((a) => {
       if (a.subject_id !== gekozenTaak?.subject_id) return false
       const n = dagenTot(a.date)
       return n === null || n >= 0 || a.id === vToets
     })
-
     async function bewaar() {
       setOpslaan(true)
       await bewerk(b.id, {
@@ -337,7 +329,6 @@ export default function WeekBoard({
       setEditId(null)
       setOpslaan(false)
     }
-
     return (
       <div
         style={{
@@ -349,7 +340,6 @@ export default function WeekBoard({
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
           Bewerken
         </p>
-
         <label className="text-xs opacity-70">Taak en vak</label>
         <select
           value={vTask}
@@ -374,13 +364,11 @@ export default function WeekBoard({
             )
           })}
         </select>
-
         {vakGewijzigd && (
           <p className="mb-2 rounded bg-blue-50 px-1.5 py-1 text-xs text-blue-800">
             Vak wordt {gekozenVak?.name}; kleur verandert mee
           </p>
         )}
-
         <label className="text-xs opacity-70">Toets</label>
         <select
           value={vToets}
@@ -399,7 +387,6 @@ export default function WeekBoard({
             </option>
           ))}
         </select>
-
         {gekozenToets ? (
           <p className="mb-2 rounded bg-white/70 px-1.5 py-1 text-xs">
             &#128221; {gekozenToets.title} &middot; {korteTel(dagenTot(gekozenToets.date))}
@@ -412,7 +399,6 @@ export default function WeekBoard({
             Geen toets gekoppeld
           </p>
         )}
-
         <label className="text-xs opacity-70">Eigen titel (leeg = taaknaam)</label>
         <input
           value={vTitel}
@@ -420,7 +406,6 @@ export default function WeekBoard({
           placeholder={gekozenTaak?.title ?? ''}
           className="mb-2 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
         />
-
         <div className="mb-2 flex gap-1.5">
           <div className="flex-1">
             <label className="text-xs opacity-70">Duur</label>
@@ -450,7 +435,6 @@ export default function WeekBoard({
             </select>
           </div>
         </div>
-
         <label className="text-xs opacity-70">Opmerking voor dit blok</label>
         <textarea
           value={vNote}
@@ -459,7 +443,6 @@ export default function WeekBoard({
           rows={2}
           className="mb-2 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
         />
-
         <div className="flex gap-1.5">
           <button
             type="button"
@@ -491,12 +474,10 @@ export default function WeekBoard({
     const urgent = d !== null && d >= 0 && d <= 3
     const binnenkort = d !== null && d > 3 && d <= 7
     const titel = b.title_override ?? t?.title ?? 'Onbekend'
-
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
       id: b.id,
       disabled: overlay,
     })
-
     return (
       <div
         ref={overlay ? undefined : setNodeRef}
@@ -514,7 +495,11 @@ export default function WeekBoard({
         <div
           {...(overlay ? {} : listeners)}
           {...(overlay ? {} : attributes)}
-          className={overlay ? '' : 'cursor-grab touch-none active:cursor-grabbing'}
+          className={
+            overlay
+              ? ''
+              : 'cursor-grab active:cursor-grabbing ' + (isDragging ? 'touch-none' : 'touch-pan-x touch-pan-y')
+          }
         >
           <p className={'font-medium leading-tight ' + (klaar ? 'line-through opacity-60' : '')}>
             {titel}
@@ -522,13 +507,11 @@ export default function WeekBoard({
           <p className="text-xs opacity-70">
             {s?.name} &middot; {b.duration_minutes} min
           </p>
-
           {b.note && (
             <p className="chip mt-1 rounded px-1.5 py-0.5 text-xs italic">
               {b.note}
             </p>
           )}
-
           {toets && !klaar && (
             <div
               className={
@@ -545,12 +528,10 @@ export default function WeekBoard({
               <span className="shrink-0">{korteTel(d)}</span>
             </div>
           )}
-
           {toets && klaar && (
             <p className="mt-1 text-xs opacity-50">&#128221; {toets.title}</p>
           )}
         </div>
-
         {!overlay && (
           <div className="mt-2 flex items-center gap-1">
             <select
@@ -659,7 +640,6 @@ export default function WeekBoard({
   }) {
     const { setNodeRef, isOver } = useDroppable({ id })
     const minuten = blokken.reduce((n, b) => n + b.duration_minutes, 0)
-
     return (
       <div
         ref={setNodeRef}
@@ -673,15 +653,12 @@ export default function WeekBoard({
           <h2 className={groot ? 'text-lg font-semibold' : 'text-sm font-semibold'}>{titel}</h2>
           <span className="muted text-xs">{subtitel}</span>
         </div>
-
         {minuten > 0 && <p className="muted text-xs">{minuten} min</p>}
-
         {toetsen.length > 0 && (
           <div className="mt-2 space-y-1.5">
             {toetsen.map((a) => <ToetsBanner key={a.id} a={a} />)}
           </div>
         )}
-
         <div className="mt-2 min-h-[60px] space-y-2">
           {blokken.map((b) =>
             editId === b.id
@@ -720,13 +697,11 @@ export default function WeekBoard({
             {formatDag(dagen[0])} t/m {formatDag(dagen[6])} {dagen[6].getFullYear()}
           </p>
         </div>
-
         <div className="surface-2 flex shrink-0 rounded-lg p-1">
           <button type="button" onClick={() => zetView('dag')} className={'tap rounded-md px-3 text-sm ' + (view === 'dag' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Dag</button>
           <button type="button" onClick={() => zetView('week')} className={'tap rounded-md px-3 text-sm ' + (view === 'week' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Week</button>
         </div>
         </div>
-
         <div className="mt-2 grid w-full grid-cols-3 gap-2 sm:mt-3 sm:flex">
         {view === 'week' ? (
           <>
@@ -746,9 +721,8 @@ export default function WeekBoard({
         )}
         </div>
       </div>
-
       {komende.length > 0 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto rounded-lg bg-amber-500/20 px-3 py-2 text-xs">
+        <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-amber-500/20 px-3 py-2 text-xs">
           <span className="shrink-0 font-semibold uppercase tracking-wide">Komt eraan</span>
           {komende.map((a) => {
             const s = subjectById(a.subject_id)
@@ -759,9 +733,7 @@ export default function WeekBoard({
           })}
         </div>
       )}
-
       {error && <p className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm text-white">{error}</p>}
-
       <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
         {view === 'week' ? (
           <>
@@ -780,7 +752,6 @@ export default function WeekBoard({
                 </div>
               })}
             </div>
-
             <div className="mt-4 hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
               <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} />
               {dagen.map((d, i) => {
@@ -792,7 +763,6 @@ export default function WeekBoard({
         ) : (
           <div className="mt-4 space-y-3">
             <Kolom id={huidigeISO} titel={DAGEN[dagIndex]} subtitel={formatDag(dagen[dagIndex])} blokken={lokaal.filter((b) => b.planned_date === huidigeISO)} toetsen={assessments.filter((a) => a.date === huidigeISO)} highlight={huidigeISO === vandaag} groot />
-
             <div className="flex gap-2 overflow-x-auto pb-1">
               {dagen.map((d, i) => {
                 const iso = toISODate(d)
@@ -804,11 +774,9 @@ export default function WeekBoard({
                 </button>
               })}
             </div>
-
             <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} />
           </div>
         )}
-
         <DragOverlay>{actief ? <Kaart b={actief} overlay /> : null}</DragOverlay>
       </DndContext>
     </div>
