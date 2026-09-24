@@ -106,6 +106,8 @@ export default function WeekBoard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [lokaal, setLokaal] = useState<Block[]>(blocks)
   const [editId, setEditId] = useState<string | null>(null)
+  const [view, setView] = useState<'dag' | 'week'>('week')
+  const [dagIndex, setDagIndex] = useState(0)
 
   useEffect(() => {
     setLokaal(blocks)
@@ -115,6 +117,15 @@ export default function WeekBoard({
   const dagen = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
   const week = isoWeek(monday)
   const vandaag = toISODate(new Date())
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('weekview')
+    const mobiel = window.matchMedia('(max-width: 639px)').matches
+    setView(saved === 'dag' || saved === 'week' ? saved : (mobiel ? 'dag' : 'week'))
+    const i = dagen.findIndex((d) => toISODate(d) === vandaag)
+    setDagIndex(i >= 0 ? i : 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mondayISO])
 
   const subjectOf = (t?: Task) => subjects.find((s) => s.id === t?.subject_id)
   const subjectById = (id: string) => subjects.find((s) => s.id === id)
@@ -140,6 +151,18 @@ export default function WeekBoard({
 
   function ga(offset: number) {
     router.push('/week?start=' + toISODate(addDays(monday, offset * 7)))
+  }
+
+  function zetView(v: 'dag' | 'week') {
+    setView(v)
+    window.localStorage.setItem('weekview', v)
+  }
+
+  function gaDag(offset: number) {
+    const nieuw = dagIndex + offset
+    if (nieuw < 0) { ga(-1); return }
+    if (nieuw > 6) { ga(1); return }
+    setDagIndex(nieuw)
   }
 
   async function voegToe(datum: string | null) {
@@ -236,8 +259,8 @@ export default function WeekBoard({
 
     return (
       <div
-        style={{ backgroundColor: hexToRgba(kleur, 0.3), borderColor: kleur }}
-        className="rounded-lg border-2 px-2 py-1.5"
+        style={{ ['--accent' as string]: kleur } as React.CSSProperties}
+        className="banner rounded-lg px-2 py-1.5"
       >
         <div className="flex items-center gap-1.5">
           <span className="text-sm">&#128221;</span>
@@ -464,14 +487,13 @@ export default function WeekBoard({
       <div
         ref={overlay ? undefined : setNodeRef}
         style={{
-          backgroundColor: hexToRgba(kleur, klaar ? 0.07 : 0.16),
-          borderColor: urgent && !klaar ? '#dc2626' : hexToRgba(kleur, 0.55),
-          borderWidth: urgent && !klaar ? '2px' : '1px',
-          borderLeft: '4px solid ' + kleur,
+          ['--accent' as string]: kleur,
           opacity: isDragging ? 0.35 : 1,
-        }}
+        } as React.CSSProperties}
         className={
-          'rounded-lg border p-2 text-sm ' +
+          'tile rounded-lg p-2 text-sm ' +
+          (klaar ? 'tile-done ' : '') +
+          (urgent && !klaar ? 'tile-urgent ' : '') +
           (overlay ? 'shadow-lg rotate-2 cursor-grabbing' : '')
         }
       >
@@ -488,7 +510,7 @@ export default function WeekBoard({
           </p>
 
           {b.note && (
-            <p className="mt-1 rounded bg-white/60 px-1.5 py-0.5 text-xs italic opacity-80">
+            <p className="chip mt-1 rounded px-1.5 py-0.5 text-xs italic">
               {b.note}
             </p>
           )}
@@ -500,8 +522,8 @@ export default function WeekBoard({
                 (urgent
                   ? 'bg-red-600 font-semibold text-white'
                   : binnenkort
-                    ? 'bg-amber-200 font-medium text-amber-900'
-                    : 'bg-white/70')
+                    ? 'bg-amber-500 font-medium text-white'
+                    : 'chip')
               }
             >
               <span>&#128221;</span>
@@ -520,7 +542,7 @@ export default function WeekBoard({
             <select
               value={b.status}
               onChange={(e) => bewerk(b.id, { status: e.target.value })}
-              className="flex-1 rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
+              className="ctl tap min-w-0 flex-1 rounded px-2 py-1 text-xs"
             >
               {STATUS.map((x) => (
                 <option key={x.value} value={x.value}>{x.label}</option>
@@ -532,7 +554,7 @@ export default function WeekBoard({
               onClick={() => setEditId(b.id)}
               disabled={busy}
               title="Bewerken"
-              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white disabled:opacity-40"
+              className="ctl tap rounded px-2 py-1 text-sm font-semibold disabled:opacity-40"
             >
               &#9998;
             </button>
@@ -542,7 +564,7 @@ export default function WeekBoard({
               onClick={() => dupliceer(b)}
               disabled={busy}
               title="Dupliceren"
-              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white disabled:opacity-40"
+              className="ctl tap rounded px-2 py-1 text-sm font-semibold disabled:opacity-40"
             >
               &#43;&#43;
             </button>
@@ -552,7 +574,7 @@ export default function WeekBoard({
               onClick={() => verwijder(b.id)}
               disabled={busy}
               title="Verwijderen"
-              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white hover:text-red-600 disabled:opacity-40"
+              className="ctl tap rounded px-2 py-1 text-lg font-bold hover:text-red-500 disabled:opacity-40"
             >
               &times;
             </button>
@@ -568,7 +590,7 @@ export default function WeekBoard({
         <select
           value={taskId}
           onChange={(e) => setTaskId(e.target.value)}
-          className="w-full rounded border border-gray-200 px-1 py-1 text-xs"
+          className="ctl tap w-full rounded px-2 py-1.5 text-xs"
         >
           {tasks.map((t) => {
             const a = toetsVanTaak(t)
@@ -584,7 +606,7 @@ export default function WeekBoard({
           <select
             value={duration}
             onChange={(e) => setDuration(Number(e.target.value))}
-            className="flex-1 rounded border border-gray-200 px-1 py-1 text-xs"
+            className="ctl tap min-w-0 flex-1 rounded px-2 py-1.5 text-xs"
           >
             {DUREN.map((m) => (
               <option key={m} value={m}>{m} min</option>
@@ -611,7 +633,7 @@ export default function WeekBoard({
   }
 
   function Kolom({
-    id, titel, subtitel, blokken, toetsen, highlight,
+    id, titel, subtitel, blokken, toetsen, highlight, groot,
   }: {
     id: string
     titel: string
@@ -619,6 +641,7 @@ export default function WeekBoard({
     blokken: Block[]
     toetsen: Assessment[]
     highlight?: boolean
+    groot?: boolean
   }) {
     const { setNodeRef, isOver } = useDroppable({ id })
     const minuten = blokken.reduce((n, b) => n + b.duration_minutes, 0)
@@ -628,16 +651,16 @@ export default function WeekBoard({
         ref={setNodeRef}
         className={
           'rounded-xl p-3 transition-colors ' +
-          (isOver ? 'bg-blue-100 ring-2 ring-blue-400'
-            : highlight ? 'bg-blue-50 ring-1 ring-blue-200' : 'bg-gray-50')
+          (isOver ? 'surface-2 ring-2 ring-blue-500'
+            : highlight ? 'surface-2 ring-1 ring-blue-400' : 'surface')
         }
       >
         <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold">{titel}</h2>
-          <span className="text-xs text-gray-400">{subtitel}</span>
+          <h2 className={groot ? 'text-lg font-semibold' : 'text-sm font-semibold'}>{titel}</h2>
+          <span className="muted text-xs">{subtitel}</span>
         </div>
 
-        {minuten > 0 && <p className="text-xs text-gray-400">{minuten} min</p>}
+        {minuten > 0 && <p className="muted text-xs">{minuten} min</p>}
 
         {toetsen.length > 0 && (
           <div className="mt-2 space-y-1.5">
@@ -658,7 +681,7 @@ export default function WeekBoard({
               type="button"
               onClick={() => setAddDate(id)}
               disabled={tasks.length === 0}
-              className="w-full rounded-lg border border-dashed py-1.5 text-xs text-gray-500 disabled:opacity-40"
+              className="brd muted tap w-full rounded-lg border border-dashed py-2 text-xs disabled:opacity-40"
             >
               + Blok
             </button>
@@ -669,93 +692,104 @@ export default function WeekBoard({
   }
 
   const actief = dragId ? lokaal.find((b) => b.id === dragId) : null
+  const nietIngepland = lokaal.filter((b) => !b.planned_date)
+  const huidigeDag = dagen[dagIndex]
+  const huidigeISO = huidigeDag ? toISODate(huidigeDag) : ''
 
   return (
     <div className="mt-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Week {week}</h1>
-          <p className="text-sm text-gray-500">
+          <p className="muted text-sm">
             {formatDag(dagen[0])} t/m {formatDag(dagen[6])} {dagen[6].getFullYear()}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => ga(-1)} className="rounded-lg border px-3 py-1.5 text-sm">
-            Vorige
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))}
-            className="rounded-lg border px-3 py-1.5 text-sm"
-          >
-            Deze week
-          </button>
-          <button type="button" onClick={() => ga(1)} className="rounded-lg border px-3 py-1.5 text-sm">
-            Volgende
-          </button>
+
+        <div className="surface-2 flex rounded-lg p-1">
+          <button type="button" onClick={() => zetView('dag')} className={'tap rounded-md px-3 text-sm ' + (view === 'dag' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Dag</button>
+          <button type="button" onClick={() => zetView('week')} className={'tap rounded-md px-3 text-sm ' + (view === 'week' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Week</button>
         </div>
       </div>
 
+      <div className="mt-3 flex gap-2">
+        {view === 'week' ? (
+          <>
+            <button type="button" onClick={() => ga(-1)} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">← Vorige</button>
+            <button type="button" onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">Deze week</button>
+            <button type="button" onClick={() => ga(1)} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">Volgende →</button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={() => gaDag(-1)} className="ctl tap rounded-lg px-4 py-2 text-sm">←</button>
+            <div className="surface-2 flex flex-1 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium">
+              {DAGEN[dagIndex]} {formatDag(dagen[dagIndex])}
+              {huidigeISO === vandaag && <span className="ml-2 rounded bg-blue-600 px-1.5 py-0.5 text-xs text-white">vandaag</span>}
+            </div>
+            <button type="button" onClick={() => gaDag(1)} className="ctl tap rounded-lg px-4 py-2 text-sm">→</button>
+          </>
+        )}
+      </div>
+
       {komende.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-amber-900">
-            Komt eraan
-          </span>
+        <div className="mt-3 flex gap-2 overflow-x-auto rounded-lg bg-amber-500/20 px-3 py-2 text-xs">
+          <span className="shrink-0 font-semibold uppercase tracking-wide">Komt eraan</span>
           {komende.map((a) => {
             const s = subjectById(a.subject_id)
             const d = dagenTot(a.date)
-            return (
-              <span
-                key={a.id}
-                style={{ backgroundColor: hexToRgba(s?.color ?? '#999', 0.25) }}
-                className="rounded px-2 py-0.5 text-xs"
-              >
-                {s?.name}: {a.title}
-                {d !== null && <span className="opacity-70"> &middot; over {d} dgn</span>}
-              </span>
-            )
+            return <span key={a.id} style={{ ['--accent' as string]: s?.color ?? '#999' } as React.CSSProperties} className="chip shrink-0 rounded px-2 py-0.5">
+              {s?.name}: {a.title}{d !== null && <span className="opacity-75"> · over {d} dgn</span>}
+            </span>
           })}
         </div>
       )}
 
-      {error && (
-        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-      )}
+      {error && <p className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm text-white">{error}</p>}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))}
-        onDragEnd={onDragEnd}
-        onDragCancel={() => setDragId(null)}
-      >
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Kolom
-            id="UNPLANNED"
-            titel="Niet ingepland"
-            subtitel={String(lokaal.filter((b) => !b.planned_date).length)}
-            blokken={lokaal.filter((b) => !b.planned_date)}
-            toetsen={[]}
-          />
-          {dagen.map((d2, i) => {
-            const iso = toISODate(d2)
-            return (
-              <Kolom
-                key={iso}
-                id={iso}
-                titel={DAGEN[i]}
-                subtitel={formatDag(d2)}
-                blokken={lokaal.filter((b) => b.planned_date === iso)}
-                toetsen={assessments.filter((a) => a.date === iso)}
-                highlight={iso === vandaag}
-              />
-            )
-          })}
-        </div>
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
+        {view === 'week' ? (
+          <>
+            <div className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 sm:hidden">
+              <div className="w-[88vw] shrink-0 snap-start">
+                <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} groot />
+              </div>
+              {dagen.map((d, i) => {
+                const iso = toISODate(d)
+                return <div key={iso} className="w-[88vw] shrink-0 snap-start">
+                  <Kolom id={iso} titel={DAGEN[i]} subtitel={formatDag(d)} blokken={lokaal.filter((b) => b.planned_date === iso)} toetsen={assessments.filter((a) => a.date === iso)} highlight={iso === vandaag} groot />
+                </div>
+              })}
+            </div>
 
-        <DragOverlay>
-          {actief ? <Kaart b={actief} overlay /> : null}
-        </DragOverlay>
+            <div className="mt-4 hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
+              <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} />
+              {dagen.map((d, i) => {
+                const iso = toISODate(d)
+                return <Kolom key={iso} id={iso} titel={DAGEN[i]} subtitel={formatDag(d)} blokken={lokaal.filter((b) => b.planned_date === iso)} toetsen={assessments.filter((a) => a.date === iso)} highlight={iso === vandaag} />
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <Kolom id={huidigeISO} titel={DAGEN[dagIndex]} subtitel={formatDag(dagen[dagIndex])} blokken={lokaal.filter((b) => b.planned_date === huidigeISO)} toetsen={assessments.filter((a) => a.date === huidigeISO)} highlight={huidigeISO === vandaag} groot />
+
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {dagen.map((d, i) => {
+                const iso = toISODate(d)
+                const n = lokaal.filter((b) => b.planned_date === iso).length
+                const heeftToets = assessments.some((a) => a.date === iso)
+                return <button key={iso} type="button" onClick={() => setDagIndex(i)} className={'tap shrink-0 rounded-lg px-3 py-2 text-xs ' + (i === dagIndex ? 'bg-blue-600 font-medium text-white' : 'surface-2')}>
+                  <span className="block">{DAGEN[i].slice(0, 2)}</span>
+                  <span className="block opacity-80">{heeftToets ? '📝' : ''}{n > 0 ? n : ''}</span>
+                </button>
+              })}
+            </div>
+
+            <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} />
+          </div>
+        )}
+
+        <DragOverlay>{actief ? <Kaart b={actief} overlay /> : null}</DragOverlay>
       </DndContext>
     </div>
   )
