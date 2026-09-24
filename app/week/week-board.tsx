@@ -27,6 +27,10 @@ type Block = {
   duration_minutes: number
   status: string
   position_key: number
+  note: string | null
+  title_override: string | null
+  assessment_id: string | null
+  assessment_manual: boolean
 }
 type Assessment = {
   id: string
@@ -45,6 +49,8 @@ const STATUS = [
   { value: 'MASTERED', label: 'Beheerst' },
   { value: 'SKIPPED', label: 'Vervallen' },
 ]
+
+const DUREN = [10, 15, 20, 25, 30, 45, 60, 90]
 
 function hexToRgba(hex: string, alpha: number) {
   const h = hex.replace('#', '')
@@ -99,6 +105,7 @@ export default function WeekBoard({
   const [duration, setDuration] = useState(30)
   const [dragId, setDragId] = useState<string | null>(null)
   const [lokaal, setLokaal] = useState<Block[]>(blocks)
+  const [editId, setEditId] = useState<string | null>(null)
 
   useEffect(() => {
     setLokaal(blocks)
@@ -114,6 +121,16 @@ export default function WeekBoard({
   const taskOf = (b: Block) => tasks.find((t) => t.id === b.task_id)
   const toetsVanTaak = (t?: Task) =>
     t?.assessment_id ? alleToetsen.find((a) => a.id === t.assessment_id) : undefined
+
+  // Toets van een blok: eigen keuze wint, anders die van de taak
+  const toetsVanBlok = (b: Block) => {
+    if (b.assessment_manual) {
+      return b.assessment_id
+        ? alleToetsen.find((a) => a.id === b.assessment_id)
+        : undefined
+    }
+    return toetsVanTaak(taskOf(b))
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -162,6 +179,10 @@ export default function WeekBoard({
         task_id: b.task_id,
         planned_date: b.planned_date,
         duration_minutes: b.duration_minutes,
+        note: b.note,
+        title_override: b.title_override,
+        assessment_id: b.assessment_id,
+        assessment_manual: b.assessment_manual,
         status: 'TODO',
         position_key: b.position_key + 1,
       })
@@ -171,29 +192,19 @@ export default function WeekBoard({
     if (error) setError(error.message)
     else if (data) {
       setLokaal((prev) => [...prev, data as Block])
+      setEditId((data as Block).id)
       router.refresh()
     }
     setBusy(false)
   }
 
-  async function verplaats(id: string, datum: string | null) {
+  async function bewerk(id: string, velden: Partial<Block>) {
     setLokaal((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, planned_date: datum } : b)))
+      prev.map((b) => (b.id === id ? { ...b, ...velden } : b)))
     const supabase = createClient()
     const { error } = await supabase
       .from('study_blocks')
-      .update({ planned_date: datum, updated_at: new Date().toISOString() })
-      .eq('id', id)
-    if (error) setError(error.message)
-    router.refresh()
-  }
-
-  async function zetStatus(id: string, status: string) {
-    setLokaal((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)))
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('study_blocks')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ ...velden, updated_at: new Date().toISOString() })
       .eq('id', id)
     if (error) setError(error.message)
     router.refresh()
@@ -215,7 +226,7 @@ export default function WeekBoard({
     const doel = String(over.id) === 'UNPLANNED' ? null : String(over.id)
     const huidig = lokaal.find((b) => b.id === id)
     if (!huidig || huidig.planned_date === doel) return
-    verplaats(id, doel)
+    bewerk(id, { planned_date: doel })
   }
 
   function ToetsBanner({ a }: { a: Assessment }) {
@@ -225,10 +236,7 @@ export default function WeekBoard({
 
     return (
       <div
-        style={{
-          backgroundColor: hexToRgba(kleur, 0.3),
-          borderColor: kleur,
-        }}
+        style={{ backgroundColor: hexToRgba(kleur, 0.3), borderColor: kleur }}
         className="rounded-lg border-2 px-2 py-1.5"
       >
         <div className="flex items-center gap-1.5">
@@ -236,18 +244,202 @@ export default function WeekBoard({
           <p className="min-w-0 flex-1 truncate text-xs font-bold uppercase tracking-wide">
             Toets
           </p>
-          {schatting && (
-            <span className="rounded bg-white/70 px-1 text-[10px]">?</span>
-          )}
+          {schatting && <span className="rounded bg-white/70 px-1 text-[10px]">?</span>}
         </div>
         <p className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</p>
         <p className="text-xs opacity-80">
-          {s?.name}
-          {a.weight ? ' \u00b7 weging ' + a.weight : ''}
+          {s?.name}{a.weight ? ' \u00b7 weging ' + a.weight : ''}
         </p>
-        {a.syllabus && (
-          <p className="mt-0.5 text-xs opacity-70">{a.syllabus}</p>
+        {a.syllabus && <p className="mt-0.5 text-xs opacity-70">{a.syllabus}</p>}
+      </div>
+    )
+  }
+
+  function BewerkPaneel({ b }: { b: Block }) {
+    const [vTask, setVTask] = useState(b.task_id)
+    const [vDuur, setVDuur] = useState(b.duration_minutes)
+    const [vDatum, setVDatum] = useState(b.planned_date ?? '')
+    const [vTitel, setVTitel] = useState(b.title_override ?? '')
+    const [vNote, setVNote] = useState(b.note ?? '')
+    const [opslaan, setOpslaan] = useState(false)
+
+    // '' = volg de taak, 'NONE' = bewust geen toets, anders een toets-id
+    const [vToets, setVToets] = useState(
+      b.assessment_manual ? (b.assessment_id ?? 'NONE') : ''
+    )
+
+    const gekozenTaak = tasks.find((t) => t.id === vTask)
+    const gekozenVak = subjectOf(gekozenTaak)
+    const taakToets = toetsVanTaak(gekozenTaak)
+    const huidigeTaak = taskOf(b)
+    const vakGewijzigd = gekozenTaak?.subject_id !== huidigeTaak?.subject_id
+
+    const gekozenToets =
+      vToets === '' ? taakToets
+        : vToets === 'NONE' ? undefined
+          : alleToetsen.find((a) => a.id === vToets)
+
+    // Toetsen van het gekozen vak die nog niet geweest zijn
+    const vakToetsen = alleToetsen.filter((a) => {
+      if (a.subject_id !== gekozenTaak?.subject_id) return false
+      const n = dagenTot(a.date)
+      return n === null || n >= 0 || a.id === vToets
+    })
+
+    async function bewaar() {
+      setOpslaan(true)
+      await bewerk(b.id, {
+        task_id: vTask,
+        duration_minutes: vDuur,
+        planned_date: vDatum || null,
+        title_override: vTitel.trim() || null,
+        note: vNote.trim() || null,
+        assessment_manual: vToets !== '',
+        assessment_id: vToets === '' || vToets === 'NONE' ? null : vToets,
+      })
+      setEditId(null)
+      setOpslaan(false)
+    }
+
+    return (
+      <div
+        style={{
+          backgroundColor: hexToRgba(gekozenVak?.color ?? '#94a3b8', 0.12),
+          borderLeft: '4px solid ' + (gekozenVak?.color ?? '#94a3b8'),
+        }}
+        className="rounded-lg border-2 border-blue-400 p-2 text-sm"
+      >
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+          Bewerken
+        </p>
+
+        <label className="text-xs opacity-70">Taak en vak</label>
+        <select
+          value={vTask}
+          onChange={(e) => setVTask(e.target.value)}
+          className="mb-2 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+        >
+          {subjects.map((s) => {
+            const vakTaken = tasks.filter((t) => t.subject_id === s.id)
+            if (vakTaken.length === 0) return null
+            return (
+              <optgroup key={s.id} label={s.name}>
+                {vakTaken.map((t) => {
+                  const a = toetsVanTaak(t)
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                      {a ? '  \u2014 toets: ' + a.title : '  \u2014 geen toets'}
+                    </option>
+                  )
+                })}
+              </optgroup>
+            )
+          })}
+        </select>
+
+        {vakGewijzigd && (
+          <p className="mb-2 rounded bg-blue-50 px-1.5 py-1 text-xs text-blue-800">
+            Vak wordt {gekozenVak?.name}; kleur verandert mee
+          </p>
         )}
+
+        <label className="text-xs opacity-70">Toets</label>
+        <select
+          value={vToets}
+          onChange={(e) => setVToets(e.target.value)}
+          className="mb-1 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+        >
+          <option value="">
+            {taakToets
+              ? 'Volg de taak (' + taakToets.title + ')'
+              : 'Volg de taak (geen toets)'}
+          </option>
+          <option value="NONE">Geen toets</option>
+          {vakToetsen.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.title}{a.date ? ' (' + korteTel(dagenTot(a.date)) + ')' : ''}
+            </option>
+          ))}
+        </select>
+
+        {gekozenToets ? (
+          <p className="mb-2 rounded bg-white/70 px-1.5 py-1 text-xs">
+            &#128221; {gekozenToets.title} &middot; {korteTel(dagenTot(gekozenToets.date))}
+            {vToets !== '' && (
+              <span className="ml-1 opacity-60">(alleen dit blok)</span>
+            )}
+          </p>
+        ) : (
+          <p className="mb-2 rounded bg-white/70 px-1.5 py-1 text-xs opacity-60">
+            Geen toets gekoppeld
+          </p>
+        )}
+
+        <label className="text-xs opacity-70">Eigen titel (leeg = taaknaam)</label>
+        <input
+          value={vTitel}
+          onChange={(e) => setVTitel(e.target.value)}
+          placeholder={gekozenTaak?.title ?? ''}
+          className="mb-2 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+        />
+
+        <div className="mb-2 flex gap-1.5">
+          <div className="flex-1">
+            <label className="text-xs opacity-70">Duur</label>
+            <select
+              value={vDuur}
+              onChange={(e) => setVDuur(Number(e.target.value))}
+              className="w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+            >
+              {DUREN.map((m) => (
+                <option key={m} value={m}>{m} min</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs opacity-70">Dag</label>
+            <select
+              value={vDatum}
+              onChange={(e) => setVDatum(e.target.value)}
+              className="w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+            >
+              <option value="">Niet ingepland</option>
+              {dagen.map((d, i) => (
+                <option key={i} value={toISODate(d)}>
+                  {DAGEN[i].slice(0, 2)} {formatDag(d)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <label className="text-xs opacity-70">Opmerking voor dit blok</label>
+        <textarea
+          value={vNote}
+          onChange={(e) => setVNote(e.target.value)}
+          placeholder="Bijv. alleen blz 12 t/m 15"
+          rows={2}
+          className="mb-2 w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
+        />
+
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={bewaar}
+            disabled={opslaan}
+            className="flex-1 rounded bg-black px-2 py-1 text-xs text-white disabled:opacity-50"
+          >
+            {opslaan ? 'Bezig...' : 'Opslaan'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditId(null)}
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+          >
+            Annuleren
+          </button>
+        </div>
       </div>
     )
   }
@@ -257,10 +449,11 @@ export default function WeekBoard({
     const s = subjectOf(t)
     const kleur = s?.color ?? '#94a3b8'
     const klaar = b.status === 'DONE' || b.status === 'MASTERED'
-    const toets = toetsVanTaak(t)
+    const toets = toetsVanBlok(b)
     const d = toets ? dagenTot(toets.date) : null
     const urgent = d !== null && d >= 0 && d <= 3
     const binnenkort = d !== null && d > 3 && d <= 7
+    const titel = b.title_override ?? t?.title ?? 'Onbekend'
 
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
       id: b.id,
@@ -288,11 +481,17 @@ export default function WeekBoard({
           className={overlay ? '' : 'cursor-grab touch-none active:cursor-grabbing'}
         >
           <p className={'font-medium leading-tight ' + (klaar ? 'line-through opacity-60' : '')}>
-            {t?.title ?? 'Onbekend'}
+            {titel}
           </p>
           <p className="text-xs opacity-70">
             {s?.name} &middot; {b.duration_minutes} min
           </p>
+
+          {b.note && (
+            <p className="mt-1 rounded bg-white/60 px-1.5 py-0.5 text-xs italic opacity-80">
+              {b.note}
+            </p>
+          )}
 
           {toets && !klaar && (
             <div
@@ -320,13 +519,23 @@ export default function WeekBoard({
           <div className="mt-2 flex items-center gap-1">
             <select
               value={b.status}
-              onChange={(e) => zetStatus(b.id, e.target.value)}
+              onChange={(e) => bewerk(b.id, { status: e.target.value })}
               className="flex-1 rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
             >
               {STATUS.map((x) => (
                 <option key={x.value} value={x.value}>{x.label}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setEditId(b.id)}
+              disabled={busy}
+              title="Bewerken"
+              className="rounded bg-white/60 px-1.5 py-0.5 text-xs hover:bg-white disabled:opacity-40"
+            >
+              &#9998;
+            </button>
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
@@ -348,21 +557,6 @@ export default function WeekBoard({
               &times;
             </button>
           </div>
-        )}
-
-        {!overlay && (
-          <select
-            value={b.planned_date ?? ''}
-            onChange={(e) => verplaats(b.id, e.target.value || null)}
-            className="mt-1.5 w-full rounded border-0 bg-white/60 px-1 py-0.5 text-xs"
-          >
-            <option value="">Niet ingepland</option>
-            {dagen.map((d2, i) => (
-              <option key={i} value={toISODate(d2)}>
-                {DAGEN[i].slice(0, 2)} {formatDag(d2)}
-              </option>
-            ))}
-          </select>
         )}
       </div>
     )
@@ -392,7 +586,7 @@ export default function WeekBoard({
             onChange={(e) => setDuration(Number(e.target.value))}
             className="flex-1 rounded border border-gray-200 px-1 py-1 text-xs"
           >
-            {[15, 20, 25, 30, 45, 60].map((m) => (
+            {DUREN.map((m) => (
               <option key={m} value={m}>{m} min</option>
             ))}
           </select>
@@ -443,9 +637,7 @@ export default function WeekBoard({
           <span className="text-xs text-gray-400">{subtitel}</span>
         </div>
 
-        {minuten > 0 && (
-          <p className="text-xs text-gray-400">{minuten} min</p>
-        )}
+        {minuten > 0 && <p className="text-xs text-gray-400">{minuten} min</p>}
 
         {toetsen.length > 0 && (
           <div className="mt-2 space-y-1.5">
@@ -454,7 +646,11 @@ export default function WeekBoard({
         )}
 
         <div className="mt-2 min-h-[60px] space-y-2">
-          {blokken.map((b) => <Kaart key={b.id} b={b} />)}
+          {blokken.map((b) =>
+            editId === b.id
+              ? <BewerkPaneel key={b.id} b={b} />
+              : <Kaart key={b.id} b={b} />
+          )}
           {addDate === id ? (
             <ToevoegForm datum={id === 'UNPLANNED' ? null : id} />
           ) : (

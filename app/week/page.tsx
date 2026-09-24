@@ -52,7 +52,7 @@ export default async function WeekPage({
 
   const { data: blocks } = await supabase
     .from('study_blocks')
-    .select('id, task_id, planned_date, duration_minutes, status, position_key')
+    .select('id, task_id, planned_date, duration_minutes, status, position_key, note, title_override, assessment_id, assessment_manual')
     .or('planned_date.is.null,and(planned_date.gte.' + toISODate(monday) + ',planned_date.lte.' + toISODate(sunday) + ')')
     .order('position_key')
 

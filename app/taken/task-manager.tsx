@@ -25,6 +25,7 @@ const TYPES = [
   { value: 'HOMEWORK', label: 'Huiswerk' },
   { value: 'TEST_PREPARATION', label: 'Toetsvoorbereiding' },
   { value: 'REPETITION', label: 'Herhaling' },
+  { value: 'REFLECTION', label: 'Reflectie' },
 ]
 
 function hexToRgba(hex: string, alpha: number) {
