@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import {
-  DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, useDroppable, useDraggable, pointerWithin,
   type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
@@ -145,8 +145,10 @@ export default function WeekBoard({
   }
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    // Muis (desktop): direct sleepbaar, zoals voorheen
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    // Touch (mobiel): even vasthouden = slepen, snel bewegen = swipen/scrollen
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
     useSensor(KeyboardSensor),
   )
 
@@ -498,7 +500,7 @@ export default function WeekBoard({
           className={
             overlay
               ? ''
-              : 'cursor-grab active:cursor-grabbing ' + (isDragging ? 'touch-none' : 'touch-pan-x touch-pan-y')
+              : 'cursor-grab touch-pan-x touch-pan-y active:cursor-grabbing'
           }
         >
           <p className={'font-medium leading-tight ' + (klaar ? 'line-through opacity-60' : '')}>
@@ -688,7 +690,7 @@ export default function WeekBoard({
   const huidigeISO = huidigeDag ? toISODate(huidigeDag) : ''
 
   return (
-    <div className="mt-2">
+    <div className="mt-2 overflow-x-hidden">
       <div className="sticky left-0 right-0 top-0 z-30 -mx-4 w-[calc(100%+2rem)] max-w-[100vw] overflow-hidden border-b border-[var(--brd)] bg-[var(--background)]/95 px-4 pb-3 pt-1 backdrop-blur sm:static sm:mx-0 sm:w-auto sm:max-w-none sm:overflow-visible sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0">
         <div className="flex w-full items-start justify-between gap-2">
         <div>
@@ -727,7 +729,7 @@ export default function WeekBoard({
           {komende.map((a) => {
             const s = subjectById(a.subject_id)
             const d = dagenTot(a.date)
-            return <span key={a.id} style={{ ['--accent' as string]: s?.color ?? '#999' } as React.CSSProperties} className="chip shrink-0 rounded px-2 py-0.5">
+            return <span key={a.id} style={{ ['--accent' as string]: s?.color ?? '#999' } as React.CSSProperties} className="chip max-w-full rounded px-2 py-0.5 break-words">
               {s?.name}: {a.title}{d !== null && <span className="opacity-75"> · over {d} dgn</span>}
             </span>
           })}
@@ -740,7 +742,7 @@ export default function WeekBoard({
             <div
               ref={mobileWeekRef}
               className="mt-4 flex w-full snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-3 sm:hidden"
-              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+              style={{ WebkitOverflowScrolling: 'touch' }}
             >
               <div className="w-[calc(100vw-3rem)] max-w-[28rem] shrink-0 snap-start self-start">
                 <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} groot />
