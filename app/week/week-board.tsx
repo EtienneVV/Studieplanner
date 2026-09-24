@@ -5,8 +5,8 @@ import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor,
-  useSensor, useSensors, useDroppable, useDraggable, pointerWithin, rectIntersection,
-  type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragStartEvent,
+  useSensor, useSensors, useDroppable, useDraggable, pointerWithin,
+  type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   isoWeek, mondayOf, addDays, toISODate, DAGEN, formatDag,
@@ -74,11 +74,6 @@ function korteTel(n: number | null): string {
   if (n === 0) return 'vandaag!'
   if (n === 1) return 'morgen!'
   return 'nog ' + n + ' dgn'
-}
-
-const collisionStrategy: CollisionDetection = (args) => {
-  const pointerHits = pointerWithin(args)
-  return pointerHits.length > 0 ? pointerHits : rectIntersection(args)
 }
 
 export default function WeekBoard({
@@ -269,23 +264,6 @@ export default function WeekBoard({
     const huidig = lokaal.find((b) => b.id === id)
     if (!huidig || huidig.planned_date === doel) return
     bewerk(id, { planned_date: doel })
-  }
-
-  function onDragMove(e: DragMoveEvent) {
-    if (view !== 'week') return
-    const el = mobileWeekRef.current
-    const rect = e.active.rect.current.translated
-    if (!el || !rect || window.innerWidth >= 640) return
-
-    const bounds = el.getBoundingClientRect()
-    const edge = 56
-    const step = Math.max(18, Math.round(el.clientWidth * 0.045))
-
-    if (rect.right > bounds.right - edge) {
-      el.scrollBy({ left: step, behavior: 'auto' })
-    } else if (rect.left < bounds.left + edge) {
-      el.scrollBy({ left: -step, behavior: 'auto' })
-    }
   }
 
   function ToetsBanner({ a }: { a: Assessment }) {
@@ -514,7 +492,7 @@ export default function WeekBoard({
     const binnenkort = d !== null && d > 3 && d <= 7
     const titel = b.title_override ?? t?.title ?? 'Onbekend'
 
-    const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
       id: b.id,
       disabled: overlay,
     })
@@ -533,7 +511,11 @@ export default function WeekBoard({
           (overlay ? 'shadow-lg rotate-2 cursor-grabbing' : '')
         }
       >
-        <div>
+        <div
+          {...(overlay ? {} : listeners)}
+          {...(overlay ? {} : attributes)}
+          className={overlay ? '' : 'cursor-grab touch-none active:cursor-grabbing'}
+        >
           <p className={'font-medium leading-tight ' + (klaar ? 'line-through opacity-60' : '')}>
             {titel}
           </p>
@@ -580,18 +562,6 @@ export default function WeekBoard({
                 <option key={x.value} value={x.value}>{x.label}</option>
               ))}
             </select>
-            <button
-              ref={overlay ? undefined : setActivatorNodeRef}
-              type="button"
-              {...(overlay ? {} : listeners)}
-              {...(overlay ? {} : attributes)}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Verslepen"
-              aria-label="Verslepen"
-              className="ctl tap cursor-grab touch-none rounded px-2 py-1 text-base font-bold active:cursor-grabbing"
-            >
-              ⠿
-            </button>
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
@@ -778,7 +748,7 @@ export default function WeekBoard({
       </div>
 
       {komende.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2 rounded-lg bg-amber-500/20 px-3 py-2 text-xs">
+        <div className="mt-3 flex gap-2 overflow-x-auto rounded-lg bg-amber-500/20 px-3 py-2 text-xs">
           <span className="shrink-0 font-semibold uppercase tracking-wide">Komt eraan</span>
           {komende.map((a) => {
             const s = subjectById(a.subject_id)
@@ -792,21 +762,13 @@ export default function WeekBoard({
 
       {error && <p className="mt-3 rounded-lg bg-red-600 px-3 py-2 text-sm text-white">{error}</p>}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={collisionStrategy}
-        autoScroll={false}
-        onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))}
-        onDragMove={onDragMove}
-        onDragEnd={onDragEnd}
-        onDragCancel={() => setDragId(null)}
-      >
+      <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
         {view === 'week' ? (
           <>
             <div
               ref={mobileWeekRef}
               className="mt-4 flex w-full snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-3 sm:hidden"
-              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', scrollBehavior: 'smooth' }}
+              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
             >
               <div className="w-[calc(100vw-3rem)] max-w-[28rem] shrink-0 snap-start self-start">
                 <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} groot />
