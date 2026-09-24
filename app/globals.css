@@ -3,24 +3,94 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --surface: #f6f7f9;
+  --surface-2: #eef1f5;
+  --card-bg: #ffffff;
+  --brd: #e2e8f0;
+  --muted: #64748b;
+  --tint: 16%;
+  --tint-done: 7%;
+  --tint-chip: 26%;
+  --tint-banner: 34%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1220;
+    --foreground: #e9eef7;
+    --surface: #141d2f;
+    --surface-2: #1c2739;
+    --card-bg: #1c2739;
+    --brd: #30405a;
+    --muted: #9aa8bd;
+    --tint: 30%;
+    --tint-done: 14%;
+    --tint-chip: 42%;
+    --tint-banner: 48%;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Vlakken */
+.surface { background: var(--surface); }
+.surface-2 { background: var(--surface-2); }
+.brd { border-color: var(--brd); }
+.muted { color: var(--muted); }
+
+/*
+  Tegels. --accent wordt per tegel inline gezet op de vakkleur.
+  color-mix zorgt dat de tint meebeweegt met licht/donker,
+  zodat de tekst altijd leesbaar blijft.
+*/
+.tile {
+  background: color-mix(in srgb, var(--accent) var(--tint), var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--card-bg));
+  border-left: 4px solid var(--accent);
+  color: var(--foreground);
+}
+.tile-done {
+  background: color-mix(in srgb, var(--accent) var(--tint-done), var(--card-bg));
+}
+.tile-urgent {
+  border: 2px solid #ef4444;
+  border-left: 4px solid var(--accent);
+}
+.chip {
+  background: color-mix(in srgb, var(--accent) var(--tint-chip), var(--card-bg));
+  color: var(--foreground);
+}
+.banner {
+  background: color-mix(in srgb, var(--accent) var(--tint-banner), var(--card-bg));
+  border: 2px solid var(--accent);
+  color: var(--foreground);
+}
+
+/* Bedieningselementen binnen tegels */
+.ctl {
+  background: var(--card-bg);
+  color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--accent, #888) 30%, var(--brd));
+}
+.ctl:disabled { opacity: .45; }
+
+input, textarea, select {
+  color: var(--foreground);
+  background: var(--card-bg);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+/* Raakvlakken groot genoeg op touch */
+@media (pointer: coarse) {
+  .tap { min-height: 34px; min-width: 34px; }
 }
