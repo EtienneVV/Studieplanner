@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 import {
@@ -108,6 +108,7 @@ export default function WeekBoard({
   const [editId, setEditId] = useState<string | null>(null)
   const [view, setView] = useState<'dag' | 'week'>('week')
   const [dagIndex, setDagIndex] = useState(0)
+  const mobileWeekRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     setLokaal(blocks)
@@ -156,6 +157,17 @@ export default function WeekBoard({
   function zetView(v: 'dag' | 'week') {
     setView(v)
     window.localStorage.setItem('weekview', v)
+
+    if (v === 'week') {
+      window.requestAnimationFrame(() => {
+        const el = mobileWeekRef.current
+        if (!el) return
+        const targetIndex = dagen.findIndex((d) => toISODate(d) === vandaag)
+        const cardIndex = targetIndex >= 0 ? targetIndex + 1 : 1
+        const card = el.children.item(cardIndex) as HTMLElement | null
+        card?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' })
+      })
+    }
   }
 
   function gaDag(offset: number) {
@@ -698,7 +710,8 @@ export default function WeekBoard({
 
   return (
     <div className="mt-2">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="sticky top-0 z-30 -mx-4 border-b border-[var(--brd)] bg-[var(--background)]/95 px-4 pb-3 pt-1 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0">
+        <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Week {week}</h1>
           <p className="muted text-sm">
@@ -710,14 +723,14 @@ export default function WeekBoard({
           <button type="button" onClick={() => zetView('dag')} className={'tap rounded-md px-3 text-sm ' + (view === 'dag' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Dag</button>
           <button type="button" onClick={() => zetView('week')} className={'tap rounded-md px-3 text-sm ' + (view === 'week' ? 'bg-blue-600 font-semibold text-white' : 'muted')}>Week</button>
         </div>
-      </div>
+        </div>
 
-      <div className="mt-3 flex gap-2">
+        <div className="mt-2 flex gap-2 sm:mt-3">
         {view === 'week' ? (
           <>
-            <button type="button" onClick={() => ga(-1)} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">← Vorige</button>
-            <button type="button" onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">Deze week</button>
-            <button type="button" onClick={() => ga(1)} className="ctl tap flex-1 rounded-lg px-3 py-2 text-sm sm:flex-none">Volgende →</button>
+            <button type="button" onClick={() => ga(-1)} className="ctl tap min-w-0 flex-1 rounded-lg px-2 py-2 text-xs sm:flex-none sm:px-3 sm:text-sm">← <span className="hidden min-[370px]:inline">Vorige</span></button>
+            <button type="button" onClick={() => router.push('/week?start=' + toISODate(mondayOf(new Date())))} className="ctl tap min-w-0 flex-1 rounded-lg px-2 py-2 text-xs sm:flex-none sm:px-3 sm:text-sm">Deze week</button>
+            <button type="button" onClick={() => ga(1)} className="ctl tap min-w-0 flex-1 rounded-lg px-2 py-2 text-xs sm:flex-none sm:px-3 sm:text-sm"><span className="hidden min-[370px]:inline">Volgende</span> →</button>
           </>
         ) : (
           <>
@@ -729,6 +742,7 @@ export default function WeekBoard({
             <button type="button" onClick={() => gaDag(1)} className="ctl tap rounded-lg px-4 py-2 text-sm">→</button>
           </>
         )}
+        </div>
       </div>
 
       {komende.length > 0 && (
@@ -749,13 +763,17 @@ export default function WeekBoard({
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setDragId(String(e.active.id))} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
         {view === 'week' ? (
           <>
-            <div className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-3 sm:hidden">
-              <div className="w-[88vw] shrink-0 snap-start">
+            <div
+              ref={mobileWeekRef}
+              className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-3 sm:hidden"
+              style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+            >
+              <div className="w-[calc(100vw-3rem)] max-w-[28rem] shrink-0 snap-start">
                 <Kolom id="UNPLANNED" titel="Niet ingepland" subtitel={String(nietIngepland.length)} blokken={nietIngepland} toetsen={[]} groot />
               </div>
               {dagen.map((d, i) => {
                 const iso = toISODate(d)
-                return <div key={iso} className="w-[88vw] shrink-0 snap-start">
+                return <div key={iso} className="w-[calc(100vw-3rem)] max-w-[28rem] shrink-0 snap-start">
                   <Kolom id={iso} titel={DAGEN[i]} subtitel={formatDag(d)} blokken={lokaal.filter((b) => b.planned_date === iso)} toetsen={assessments.filter((a) => a.date === iso)} highlight={iso === vandaag} groot />
                 </div>
               })}

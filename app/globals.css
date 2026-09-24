@@ -94,3 +94,20 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 @media (pointer: coarse) {
   .tap { min-height: 34px; min-width: 34px; }
 }
+
+/* Mobiele planner: voorkom browser text-zoom bij orientatiewissel */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+@media (orientation: landscape) and (pointer: coarse) {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
