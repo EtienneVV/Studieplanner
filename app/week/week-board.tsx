@@ -33,6 +33,10 @@ type Block = {
   assessment_id: string | null
   assessment_manual: boolean
 }
+type BlockFields = Pick<
+  Block,
+  'task_id' | 'duration_minutes' | 'note' | 'title_override' | 'assessment_id' | 'assessment_manual'
+>
 type Assessment = {
   id: string
   title: string
@@ -87,6 +91,15 @@ function pdfColor(hex: string | undefined): [number, number, number] {
   ]
 }
 
+function sameBlockContent(a: BlockFields, b: BlockFields): boolean {
+  return a.task_id === b.task_id
+    && a.duration_minutes === b.duration_minutes
+    && a.note === b.note
+    && a.title_override === b.title_override
+    && a.assessment_id === b.assessment_id
+    && a.assessment_manual === b.assessment_manual
+}
+
 export default function WeekBoard({
   householdId,
   studentId,
@@ -117,6 +130,7 @@ export default function WeekBoard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [lokaal, setLokaal] = useState<Block[]>(blocks)
   const [editId, setEditId] = useState<string | null>(null)
+  const [duplicateId, setDuplicateId] = useState<string | null>(null)
   const [view, setView] = useState<'dag' | 'week'>('week')
   const [dagIndex, setDagIndex] = useState(0)
   const mobileWeekRef = useRef<HTMLDivElement | null>(null)
@@ -212,21 +226,23 @@ export default function WeekBoard({
     setBusy(false)
   }
 
-  async function dupliceer(b: Block) {
+  async function dupliceer(b: Block, datums: string[]): Promise<string | null> {
     if (!studentId) {
-      setError('Geen leerling gevonden.')
-      return
+      return 'Geen leerling gevonden.'
     }
-    setBusy(true)
-    setError('')
+    const uniekeDatums = [...new Set(datums)]
+    if (uniekeDatums.length === 0) {
+      return 'Selecteer minimaal één dag.'
+    }
+
     const supabase = createClient()
     const { data, error } = await supabase
       .from('study_blocks')
-      .insert({
+      .insert(uniekeDatums.map((planned_date) => ({
         household_id: householdId,
         student_id: studentId,
         task_id: b.task_id,
-        planned_date: b.planned_date,
+        planned_date,
         duration_minutes: b.duration_minutes,
         note: b.note,
         title_override: b.title_override,
@@ -234,16 +250,98 @@ export default function WeekBoard({
         assessment_manual: b.assessment_manual,
         status: 'TODO',
         position_key: b.position_key + 1,
-      })
+      })))
       .select()
-      .single()
-    if (error) setError(error.message)
-    else if (data) {
-      setLokaal((prev) => [...prev, data as Block])
-      setEditId((data as Block).id)
-      router.refresh()
+    if (error) return error.message
+    setLokaal((prev) => [...prev, ...((data ?? []) as Block[])])
+    setDuplicateId(null)
+    router.refresh()
+    return null
+  }
+
+  async function bewerkMetDagen(
+    id: string,
+    velden: Partial<Block>,
+    datums: string[],
+  ): Promise<string | null> {
+    const bron = lokaal.find((block) => block.id === id)
+    if (!bron) {
+      return 'Kaartje niet gevonden. Vernieuw de planner en probeer opnieuw.'
     }
-    setBusy(false)
+
+    const uniekeDatums = [...new Set(datums)]
+    const inhoud: BlockFields = {
+      task_id: velden.task_id ?? bron.task_id,
+      duration_minutes: velden.duration_minutes ?? bron.duration_minutes,
+      note: velden.note === undefined ? bron.note : velden.note,
+      title_override: velden.title_override === undefined ? bron.title_override : velden.title_override,
+      assessment_id: velden.assessment_id === undefined ? bron.assessment_id : velden.assessment_id,
+      assessment_manual: velden.assessment_manual ?? bron.assessment_manual,
+    }
+    const bestaandeVoorDatum = (datum: string) => lokaal.some((ander) =>
+      ander.id !== id
+      && ander.planned_date === datum
+      && sameBlockContent(ander, inhoud))
+    const primaireDatum = bron.planned_date && uniekeDatums.includes(bron.planned_date)
+      ? bron.planned_date
+      : uniekeDatums.find((datum) => !bestaandeVoorDatum(datum))
+
+    if (uniekeDatums.length > 0 && !primaireDatum) {
+      return 'Op alle gekozen dagen staat dit kaartje al. Pas de selectie aan om dubbele kaartjes te voorkomen.'
+    }
+
+    const kopieDatums = uniekeDatums.filter((datum) =>
+      datum !== primaireDatum && !bestaandeVoorDatum(datum))
+    if (kopieDatums.length > 0 && !studentId) {
+      return 'Geen leerling gevonden; het kaartje kan niet naar meerdere dagen worden ingepland.'
+    }
+    const basisVelden = {
+      ...velden,
+      planned_date: primaireDatum ?? null,
+    }
+    const kopieVelden = kopieDatums.map((planned_date) => ({
+      household_id: householdId,
+      student_id: studentId,
+      ...inhoud,
+      planned_date,
+      status: 'TODO',
+      position_key: bron.position_key + 1,
+    }))
+
+    const supabase = createClient()
+    const { data: kopieën, error: kopieFout } = kopieVelden.length > 0
+      ? await supabase.from('study_blocks').insert(kopieVelden).select()
+      : { data: [], error: null }
+
+    if (kopieFout) {
+      return kopieFout.message
+    }
+
+    const { data: bijgewerkteRij, error: updateFout } = await supabase
+      .from('study_blocks')
+      .update({ ...basisVelden, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle()
+
+    if (updateFout || !bijgewerkteRij) {
+      const ids = (kopieën ?? []).map((kopie) => kopie.id)
+      const opruimResultaat = ids.length > 0
+        ? await supabase.from('study_blocks').delete().in('id', ids)
+        : { error: null }
+      const foutmelding = updateFout?.message ?? 'Kaartje kon niet worden bijgewerkt; het is mogelijk verwijderd.'
+      return opruimResultaat.error
+        ? foutmelding + ' Ook konden aangemaakte kopieën niet automatisch worden opgeruimd: ' + opruimResultaat.error.message
+        : foutmelding
+    }
+
+    const bijgewerkt = { ...bron, ...basisVelden } as Block
+    setLokaal((prev) => [
+      ...prev.map((block) => block.id === id ? bijgewerkt : block),
+      ...((kopieën ?? []) as Block[]),
+    ])
+    router.refresh()
+    return null
   }
 
   async function bewerk(id: string, velden: Partial<Block>) {
@@ -305,10 +403,11 @@ export default function WeekBoard({
   function BewerkPaneel({ b }: { b: Block }) {
     const [vTask, setVTask] = useState(b.task_id)
     const [vDuur, setVDuur] = useState(b.duration_minutes)
-    const [vDatum, setVDatum] = useState(b.planned_date ?? '')
+    const [vDatums, setVDatums] = useState<string[]>(b.planned_date ? [b.planned_date] : [])
     const [vTitel, setVTitel] = useState(b.title_override ?? '')
     const [vNote, setVNote] = useState(b.note ?? '')
     const [opslaan, setOpslaan] = useState(false)
+    const [bewerkFout, setBewerkFout] = useState('')
     // '' = volg de taak, 'NONE' = bewust geen toets, anders een toets-id
     const [vToets, setVToets] = useState(
       b.assessment_manual ? (b.assessment_id ?? 'NONE') : ''
@@ -330,16 +429,17 @@ export default function WeekBoard({
     })
     async function bewaar() {
       setOpslaan(true)
-      await bewerk(b.id, {
+      setBewerkFout('')
+      const fout = await bewerkMetDagen(b.id, {
         task_id: vTask,
         duration_minutes: vDuur,
-        planned_date: vDatum || null,
         title_override: vTitel.trim() || null,
         note: vNote.trim() || null,
         assessment_manual: vToets !== '',
         assessment_id: vToets === '' || vToets === 'NONE' ? null : vToets,
-      })
-      setEditId(null)
+      }, vDatums)
+      if (fout) setBewerkFout(fout)
+      else setEditId(null)
       setOpslaan(false)
     }
     return (
@@ -432,22 +532,38 @@ export default function WeekBoard({
               ))}
             </select>
           </div>
-          <div className="flex-1">
-            <label className="text-xs opacity-70">Dag</label>
-            <select
-              value={vDatum}
-              onChange={(e) => setVDatum(e.target.value)}
-              className="w-full rounded border border-gray-300 bg-white px-1.5 py-1 text-xs"
-            >
-              <option value="">Niet ingepland</option>
-              {dagen.map((d, i) => (
-                <option key={i} value={toISODate(d)}>
-                  {DAGEN[i].slice(0, 2)} {formatDag(d)}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
+        <fieldset className="mb-2">
+          <legend className="mb-1 text-xs opacity-70">Dagen (leeg = niet ingepland)</legend>
+          <div className="grid grid-cols-4 gap-1 sm:grid-cols-7">
+            {dagen.map((dag, i) => {
+              const datum = toISODate(dag)
+              const geselecteerd = vDatums.includes(datum)
+              return (
+                <label
+                  key={datum}
+                  className={
+                    'flex cursor-pointer flex-col items-center rounded border px-1 py-1 text-[11px] focus-within:ring-2 focus-within:ring-blue-500 ' +
+                    (geselecteerd ? 'border-blue-600 bg-blue-600 font-medium text-white' : 'border-gray-300 bg-white')
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={geselecteerd}
+                    disabled={opslaan}
+                    onChange={(e) => setVDatums((prev) =>
+                      e.target.checked
+                        ? [...new Set([...prev, datum])]
+                        : prev.filter((value) => value !== datum))}
+                    className="sr-only"
+                  />
+                  <span>{DAGEN[i].slice(0, 2)}</span>
+                  <span>{formatDag(dag)}</span>
+                </label>
+              )
+            })}
+          </div>
+        </fieldset>
         <label className="text-xs opacity-70">Opmerking voor dit blok</label>
         <textarea
           value={vNote}
@@ -468,11 +584,81 @@ export default function WeekBoard({
           <button
             type="button"
             onClick={() => setEditId(null)}
+            disabled={opslaan}
             className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
           >
             Annuleren
           </button>
         </div>
+        {bewerkFout && <p className="mt-2 text-xs text-red-600">{bewerkFout}</p>}
+      </div>
+    )
+  }
+
+  function DupliceerPaneel({ b }: { b: Block }) {
+    const [datums, setDatums] = useState<string[]>([])
+    const [opslaan, setOpslaan] = useState(false)
+    const [dupliceerFout, setDupliceerFout] = useState('')
+
+    async function bewaarKopieën() {
+      setOpslaan(true)
+      setDupliceerFout('')
+      const fout = await dupliceer(b, datums)
+      if (fout) setDupliceerFout(fout)
+      setOpslaan(false)
+    }
+
+    return (
+      <div className="mt-2 rounded-lg border border-dashed p-2">
+        <p className="mb-2 text-xs font-semibold">Kies een of meer dagen voor de kopie</p>
+        <div className="grid grid-cols-4 gap-1 sm:grid-cols-7">
+          {dagen.map((dag, i) => {
+            const datum = toISODate(dag)
+            const geselecteerd = datums.includes(datum)
+            return (
+              <label
+                key={datum}
+                className={
+                  'flex cursor-pointer flex-col items-center rounded border px-1 py-1 text-[11px] focus-within:ring-2 focus-within:ring-blue-500 ' +
+                  (geselecteerd ? 'border-blue-600 bg-blue-600 font-medium text-white' : 'border-gray-300 bg-white')
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={geselecteerd}
+                  disabled={busy || opslaan}
+                  onChange={(e) => setDatums((prev) =>
+                    e.target.checked
+                      ? [...new Set([...prev, datum])]
+                      : prev.filter((value) => value !== datum))}
+                  className="sr-only"
+                />
+                <span>{DAGEN[i].slice(0, 2)}</span>
+                <span>{formatDag(dag)}</span>
+                {datum === b.planned_date && <span className="text-[9px]">origineel</span>}
+              </label>
+            )
+          })}
+        </div>
+        <div className="mt-2 flex gap-1.5">
+          <button
+            type="button"
+            onClick={bewaarKopieën}
+            disabled={busy || opslaan || datums.length === 0}
+            className="flex-1 rounded bg-black px-2 py-1.5 text-xs text-white disabled:opacity-50"
+          >
+            {opslaan ? 'Bezig...' : 'Kopieën opslaan'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDuplicateId(null)}
+            disabled={busy || opslaan}
+            className="rounded border border-gray-300 bg-white px-2 py-1.5 text-xs disabled:opacity-50"
+          >
+            Annuleren
+          </button>
+        </div>
+        {dupliceerFout && <p className="mt-2 text-xs text-red-600">{dupliceerFout}</p>}
       </div>
     )
   }
@@ -569,7 +755,11 @@ export default function WeekBoard({
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => dupliceer(b)}
+              onClick={() => {
+                setDuplicateId(duplicateId === b.id ? null : b.id)
+                setEditId(null)
+                setError('')
+              }}
               disabled={busy}
               title="Dupliceren"
               className="ctl tap rounded px-2 py-1 text-sm font-semibold disabled:opacity-40"
@@ -587,6 +777,10 @@ export default function WeekBoard({
               &times;
             </button>
           </div>
+        )}
+        {!overlay && duplicateId === b.id && <DupliceerPaneel b={b} />}
+        {!overlay && error && duplicateId === b.id && (
+          <p className="mt-2 text-xs text-red-600">{error}</p>
         )}
       </div>
     )
