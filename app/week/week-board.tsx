@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
+import { jsPDF } from 'jspdf'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors, useDroppable, useDraggable, pointerWithin,
@@ -74,6 +75,16 @@ function korteTel(n: number | null): string {
   if (n === 0) return 'vandaag!'
   if (n === 1) return 'morgen!'
   return 'nog ' + n + ' dgn'
+}
+
+function pdfColor(hex: string | undefined): [number, number, number] {
+  const value = hex?.replace('#', '')
+  if (!value || !/^[\da-f]{6}$/i.test(value)) return [148, 163, 184]
+  return [
+    parseInt(value.slice(0, 2), 16),
+    parseInt(value.slice(2, 4), 16),
+    parseInt(value.slice(4, 6), 16),
+  ]
 }
 
 export default function WeekBoard({
@@ -684,35 +695,207 @@ export default function WeekBoard({
     )
   }
 
-  function printKaart(b: Block) {
-    const t = taskOf(b)
-    const s = subjectOf(t)
-    const toets = toetsVanBlok(b)
-    const titel = b.title_override ?? t?.title ?? 'Onbekend'
-    const status = STATUS.find((item) => item.value === b.status)?.label ?? b.status
-
-    return (
-      <article key={b.id} className="week-print-card" style={{ borderLeftColor: s?.color ?? '#94a3b8' }}>
-        <p className="week-print-card-title">{titel}</p>
-        <p>{s?.name} · {b.duration_minutes} min · {status}</p>
-        {b.note && <p className="week-print-note">{b.note}</p>}
-        {toets && <p className="week-print-assessment">Toets: {toets.title}</p>}
-      </article>
-    )
-  }
-
   const actief = dragId ? lokaal.find((b) => b.id === dragId) : null
   const nietIngepland = lokaal.filter((b) => !b.planned_date)
   const huidigeDag = dagen[dagIndex]
   const huidigeISO = huidigeDag ? toISODate(huidigeDag) : ''
 
   function downloadPdf() {
-    const previousTitle = document.title
-    document.title = 'Studieplanner-week-' + mondayISO
-    window.addEventListener('afterprint', () => {
-      document.title = previousTitle
-    }, { once: true })
-    window.print()
+    setError('')
+
+    try {
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 8
+      const gap = 2
+      const exportDays = view === 'week'
+        ? dagen.map((date, index) => ({ date, index }))
+        : [{ date: huidigeDag, index: dagIndex }]
+      const columnWidth = (pageWidth - margin * 2 - gap * (exportDays.length - 1)) / exportDays.length
+      const pageTitle = view === 'week'
+        ? 'Week ' + week
+        : DAGEN[dagIndex] + ' ' + formatDag(huidigeDag)
+      const marginBottom = 8
+      const contentTop = 32
+      const contentBottom = pageHeight - marginBottom
+      const fontSize = exportDays.length === 7 ? 6 : 9
+      const lineHeight = exportDays.length === 7 ? 2.8 : 4
+      const textWidth = columnWidth - 6
+      const maxLinesPerCard = Math.floor((contentBottom - contentTop - 5) / lineHeight)
+      const entriesByDay = exportDays.map(({ date }) => {
+        const iso = toISODate(date)
+        const entries: { lines: string[]; color: [number, number, number] }[] = []
+        const dayAssessments = assessments.filter((assessment) => assessment.date === iso)
+        const dayBlocks = lokaal.filter((block) => block.planned_date === iso)
+
+        for (const assessment of dayAssessments) {
+          const subject = subjectById(assessment.subject_id)
+          entries.push({
+            lines: ['Toets: ' + assessment.title, subject?.name ?? ''],
+            color: [180, 83, 9],
+          })
+        }
+
+        for (const block of dayBlocks) {
+          const task = taskOf(block)
+          const subject = subjectOf(task)
+          const assessment = toetsVanBlok(block)
+          const status = STATUS.find((item) => item.value === block.status)?.label ?? block.status
+          entries.push({
+            lines: [
+              block.title_override ?? task?.title ?? 'Onbekend',
+              [subject?.name, block.duration_minutes + ' min', status].filter(Boolean).join(' · '),
+              ...(block.note ? [block.note] : []),
+              ...(assessment ? ['Toets: ' + assessment.title] : []),
+            ],
+            color: pdfColor(subject?.color),
+          })
+        }
+
+        if (entries.length === 0) {
+          entries.push({ lines: ['Geen geplande blokken'], color: [148, 163, 184] })
+        }
+        return entries.flatMap((entry) => {
+          const wrappedLines = entry.lines.flatMap((line) => {
+            const normalized = line.replace(/\s+/g, ' ').trim()
+            if (!normalized) return []
+            const wrapped = pdf.splitTextToSize(normalized, textWidth)
+            return Array.isArray(wrapped) ? wrapped : [wrapped]
+          })
+          const fragments: { lines: string[]; color: [number, number, number] }[] = []
+          for (let line = 0; line < wrappedLines.length; line += maxLinesPerCard) {
+            fragments.push({
+              lines: wrappedLines.slice(line, line + maxLinesPerCard),
+              color: entry.color,
+            })
+          }
+          return fragments
+        })
+      })
+
+      const entryOffsets = exportDays.map(() => 0)
+      let pageNumber = 0
+
+      while (entryOffsets.some((offset, index) => offset < entriesByDay[index].length)) {
+        if (pageNumber > 0) pdf.addPage('a4', 'landscape')
+        pdf.setTextColor(25, 35, 50)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(15)
+        pdf.text(pageTitle, margin, 13)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(8)
+        pdf.setTextColor(90, 100, 115)
+        const dateRange = view === 'week'
+          ? formatDag(dagen[0]) + ' t/m ' + formatDag(dagen[6]) + ' ' + dagen[6].getFullYear()
+          : formatDag(huidigeDag) + ' ' + huidigeDag.getFullYear()
+        pdf.text(dateRange, margin, 19)
+
+        for (let column = 0; column < exportDays.length; column++) {
+          const x = margin + column * (columnWidth + gap)
+          const { date, index } = exportDays[column]
+          const isContinuation = entryOffsets[column] > 0
+          pdf.setFillColor(238, 242, 247)
+          pdf.roundedRect(x, 23, columnWidth, 7, 1, 1, 'F')
+          pdf.setTextColor(25, 35, 50)
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(exportDays.length === 7 ? 7 : 10)
+          pdf.text(
+            DAGEN[index].slice(0, 2) + ' ' + formatDag(date) + (isContinuation ? ' ·' : ''),
+            x + 2,
+            27.5,
+            { maxWidth: columnWidth - 4 },
+          )
+
+          let y = contentTop
+          const entries = entriesByDay[column]
+          while (entryOffsets[column] < entries.length) {
+            const entry = entries[entryOffsets[column]]
+            const cardHeight = Math.max(8, entry.lines.length * lineHeight + 4)
+            if (y + cardHeight > contentBottom) break
+
+            pdf.setDrawColor(205, 213, 223)
+            pdf.setFillColor(255, 255, 255)
+            pdf.roundedRect(x, y, columnWidth, cardHeight, 1, 1, 'FD')
+            pdf.setDrawColor(...entry.color)
+            pdf.setLineWidth(0.8)
+            pdf.line(x + 0.5, y + 1, x + 0.5, y + cardHeight - 1)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(fontSize)
+            pdf.setTextColor(40, 50, 65)
+            pdf.text(entry.lines, x + 3, y + 3.5, { lineHeightFactor: 1.15 })
+            y += cardHeight + 1.5
+            entryOffsets[column]++
+          }
+        }
+        pageNumber++
+      }
+
+      if (nietIngepland.length > 0) {
+        const columns = 4
+        const unplannedGap = 3
+        const unplannedWidth = (pageWidth - margin * 2 - unplannedGap * (columns - 1)) / columns
+        const maxUnplannedLines = Math.floor((pageHeight - 36) / 3.5)
+        const unplannedEntries = nietIngepland.flatMap((block) => {
+          const task = taskOf(block)
+          const subject = subjectOf(task)
+          const assessment = toetsVanBlok(block)
+          const lines = [
+            block.title_override ?? task?.title ?? 'Onbekend',
+            [subject?.name, block.duration_minutes + ' min'].filter(Boolean).join(' · '),
+            ...(block.note ? [block.note] : []),
+            ...(assessment ? ['Toets: ' + assessment.title] : []),
+          ].flatMap((line) => {
+            const normalized = line.replace(/\s+/g, ' ').trim()
+            if (!normalized) return []
+            const wrapped = pdf.splitTextToSize(normalized, unplannedWidth - 6)
+            return Array.isArray(wrapped) ? wrapped : [wrapped]
+          })
+          const fragments: string[][] = []
+          for (let line = 0; line < lines.length; line += maxUnplannedLines) {
+            fragments.push(lines.slice(line, line + maxUnplannedLines))
+          }
+          return fragments
+        })
+        let y = 25
+        let unplannedPage = 0
+        for (let rowStart = 0; rowStart < unplannedEntries.length; rowStart += columns) {
+          const row = unplannedEntries.slice(rowStart, rowStart + columns)
+          const rowHeight = Math.max(...row.map((lines) => Math.max(10, lines.length * 3.5 + 4)))
+          if (y + rowHeight > pageHeight - margin) {
+            pdf.addPage('a4', 'landscape')
+            y = 25
+            unplannedPage++
+          }
+          if (y === 25) {
+            pdf.setTextColor(25, 35, 50)
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(15)
+            pdf.text(pageTitle + ' · Niet ingepland' + (unplannedPage ? ' (vervolg)' : ''), margin, 13)
+          }
+          row.forEach((lines, column) => {
+            const x = margin + column * (unplannedWidth + unplannedGap)
+            const cardHeight = Math.max(10, lines.length * 3.5 + 4)
+            pdf.setDrawColor(205, 213, 223)
+            pdf.roundedRect(x, y, unplannedWidth, cardHeight, 1, 1, 'S')
+            pdf.setDrawColor(148, 163, 184)
+            pdf.setLineWidth(0.8)
+            pdf.line(x + 0.5, y + 1, x + 0.5, y + cardHeight - 1)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(8)
+            pdf.setTextColor(40, 50, 65)
+            pdf.text(lines, x + 3, y + 4, { lineHeightFactor: 1.15 })
+          })
+          y += rowHeight + 2
+        }
+      }
+
+      pdf.save('Studieplanner- week ' + week + '.pdf')
+    } catch (downloadError) {
+      setError(downloadError instanceof Error
+        ? 'PDF downloaden is niet gelukt: ' + downloadError.message
+        : 'PDF downloaden is niet gelukt.')
+    }
   }
 
   return (
@@ -755,8 +938,8 @@ export default function WeekBoard({
             onClick={downloadPdf}
             className="ctl tap flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium sm:w-auto"
           >
-            <span aria-hidden="true">&#128438;</span>
-            Download PDF
+            <span aria-hidden="true">&#8595;</span>
+            PDF downloaden
           </button>
         </div>
       </div>
@@ -818,46 +1001,6 @@ export default function WeekBoard({
         )}
         <DragOverlay>{actief ? <Kaart b={actief} overlay /> : null}</DragOverlay>
       </DndContext>
-      </div>
-      <div className="week-print">
-        <header className="week-print-header">
-          <h1>{view === 'week' ? 'Week ' + week : 'Dagoverzicht'}</h1>
-          <p>
-            {view === 'week'
-              ? formatDag(dagen[0]) + ' t/m ' + formatDag(dagen[6]) + ' ' + dagen[6].getFullYear()
-              : DAGEN[dagIndex] + ' ' + formatDag(huidigeDag) + ' ' + huidigeDag.getFullYear()}
-          </p>
-        </header>
-        <div className={'week-print-grid ' + (view === 'dag' ? 'week-print-grid-day' : '')}>
-          {(view === 'week' ? dagen.map((date, index) => ({ date, index })) : [{ date: huidigeDag, index: dagIndex }])
-            .map(({ date, index }) => {
-              const iso = toISODate(date)
-              const dagBlokken = lokaal.filter((block) => block.planned_date === iso)
-              const dagToetsen = assessments.filter((assessment) => assessment.date === iso)
-
-              return (
-                <section key={iso} className="week-print-day">
-                  <h2>{DAGEN[index]} <span>{formatDag(date)}</span></h2>
-                  {dagToetsen.map((assessment) => (
-                    <p key={assessment.id} className="week-print-day-assessment">
-                      Toets: {assessment.title}
-                    </p>
-                  ))}
-                  {dagBlokken.length > 0
-                    ? dagBlokken.map((block) => printKaart(block))
-                    : <p className="week-print-empty">Geen geplande blokken</p>}
-                </section>
-              )
-            })}
-        </div>
-        {nietIngepland.length > 0 && (
-          <section className="week-print-unplanned">
-            <h2>Niet ingepland</h2>
-            <div>
-              {nietIngepland.map((block) => printKaart(block))}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   )
