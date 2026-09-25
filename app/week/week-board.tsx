@@ -684,13 +684,40 @@ export default function WeekBoard({
     )
   }
 
+  function printKaart(b: Block) {
+    const t = taskOf(b)
+    const s = subjectOf(t)
+    const toets = toetsVanBlok(b)
+    const titel = b.title_override ?? t?.title ?? 'Onbekend'
+    const status = STATUS.find((item) => item.value === b.status)?.label ?? b.status
+
+    return (
+      <article key={b.id} className="week-print-card" style={{ borderLeftColor: s?.color ?? '#94a3b8' }}>
+        <p className="week-print-card-title">{titel}</p>
+        <p>{s?.name} · {b.duration_minutes} min · {status}</p>
+        {b.note && <p className="week-print-note">{b.note}</p>}
+        {toets && <p className="week-print-assessment">Toets: {toets.title}</p>}
+      </article>
+    )
+  }
+
   const actief = dragId ? lokaal.find((b) => b.id === dragId) : null
   const nietIngepland = lokaal.filter((b) => !b.planned_date)
   const huidigeDag = dagen[dagIndex]
   const huidigeISO = huidigeDag ? toISODate(huidigeDag) : ''
 
+  function downloadPdf() {
+    const previousTitle = document.title
+    document.title = 'Studieplanner-week-' + mondayISO
+    window.addEventListener('afterprint', () => {
+      document.title = previousTitle
+    }, { once: true })
+    window.print()
+  }
+
   return (
     <div className="mt-2 overflow-x-hidden">
+      <div className="week-screen">
       <div className="sticky left-0 right-0 top-0 z-30 -mx-4 w-[calc(100%+2rem)] max-w-[100vw] overflow-hidden border-b border-[var(--brd)] bg-[var(--background)]/95 px-4 pb-3 pt-1 backdrop-blur sm:static sm:mx-0 sm:w-auto sm:max-w-none sm:overflow-visible sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:pt-0">
         <div className="flex w-full items-start justify-between gap-2">
         <div>
@@ -721,6 +748,16 @@ export default function WeekBoard({
             <button type="button" onClick={() => gaDag(1)} className="ctl tap rounded-lg px-4 py-2 text-sm">→</button>
           </>
         )}
+        </div>
+        <div className="mt-2 flex justify-end sm:mt-3">
+          <button
+            type="button"
+            onClick={downloadPdf}
+            className="ctl tap flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium sm:w-auto"
+          >
+            <span aria-hidden="true">&#128438;</span>
+            Download PDF
+          </button>
         </div>
       </div>
       {komende.length > 0 && (
@@ -781,6 +818,47 @@ export default function WeekBoard({
         )}
         <DragOverlay>{actief ? <Kaart b={actief} overlay /> : null}</DragOverlay>
       </DndContext>
+      </div>
+      <div className="week-print">
+        <header className="week-print-header">
+          <h1>{view === 'week' ? 'Week ' + week : 'Dagoverzicht'}</h1>
+          <p>
+            {view === 'week'
+              ? formatDag(dagen[0]) + ' t/m ' + formatDag(dagen[6]) + ' ' + dagen[6].getFullYear()
+              : DAGEN[dagIndex] + ' ' + formatDag(huidigeDag) + ' ' + huidigeDag.getFullYear()}
+          </p>
+        </header>
+        <div className={'week-print-grid ' + (view === 'dag' ? 'week-print-grid-day' : '')}>
+          {(view === 'week' ? dagen.map((date, index) => ({ date, index })) : [{ date: huidigeDag, index: dagIndex }])
+            .map(({ date, index }) => {
+              const iso = toISODate(date)
+              const dagBlokken = lokaal.filter((block) => block.planned_date === iso)
+              const dagToetsen = assessments.filter((assessment) => assessment.date === iso)
+
+              return (
+                <section key={iso} className="week-print-day">
+                  <h2>{DAGEN[index]} <span>{formatDag(date)}</span></h2>
+                  {dagToetsen.map((assessment) => (
+                    <p key={assessment.id} className="week-print-day-assessment">
+                      Toets: {assessment.title}
+                    </p>
+                  ))}
+                  {dagBlokken.length > 0
+                    ? dagBlokken.map((block) => printKaart(block))
+                    : <p className="week-print-empty">Geen geplande blokken</p>}
+                </section>
+              )
+            })}
+        </div>
+        {nietIngepland.length > 0 && (
+          <section className="week-print-unplanned">
+            <h2>Niet ingepland</h2>
+            <div>
+              {nietIngepland.map((block) => printKaart(block))}
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

@@ -70,7 +70,7 @@ export default async function WeekPage({
     .slice(0, 5)
 
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-6">
+    <main className="week-page mx-auto max-w-6xl p-4 sm:p-6">
       <Link href="/" className="text-sm text-gray-500 underline">Terug</Link>
       <WeekBoard
         householdId={householdId}
