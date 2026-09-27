@@ -46,28 +46,38 @@ export default function OefenManager({
 }) {
   const [fase, setFase] = useState<'instellen' | 'bezig' | 'klaar'>('instellen')
   const [richting, setRichting] = useState<Richting>('GEMENGD')
-  const [vragen, setVragen] = useState<Vraag[]>([])
-  const [index, setIndex] = useState(0)
+
+  // De wachtrij bevat de kaartjes die nog aan bod moeten komen.
+  // huidigeVraag is het kaartje dat nu op het scherm staat.
+  const [wachtrij, setWachtrij] = useState<Vraag[]>([])
+  const [huidigeVraag, setHuidigeVraag] = useState<Vraag | null>(null)
+
   const [antwoord, setAntwoord] = useState('')
   const [status, setStatus] = useState<'idle' | 'goed' | 'fout' | 'toonAntwoord'>('idle')
-  const [goedAantal, setGoedAantal] = useState(0)
-  const [foutAantal, setFoutAantal] = useState(0)
+
+  // klaarIds: kaartjes die de gebruiker zelf goed heeft beantwoord (komen niet terug).
+  // moeiteIds: kaartjes waarbij minstens één keer "antwoord tonen" is gebruikt.
+  const [klaarIds, setKlaarIds] = useState<Set<string>>(new Set())
+  const [moeiteIds, setMoeiteIds] = useState<Set<string>>(new Set())
+
+  const totaalKaarten = cards.length
 
   function start() {
-    setVragen(bouwVragen(cards, richting))
-    setIndex(0)
+    const vragen = bouwVragen(cards, richting)
+    const [eerste, ...rest] = vragen
+    setWachtrij(rest ?? [])
+    setHuidigeVraag(eerste ?? null)
+    setKlaarIds(new Set())
+    setMoeiteIds(new Set())
     setAntwoord('')
     setStatus('idle')
-    setGoedAantal(0)
-    setFoutAantal(0)
-    setFase('bezig')
+    setFase(eerste ? 'bezig' : 'klaar')
   }
 
   function opnieuwBeginnen() {
     setFase('instellen')
   }
 
-  const huidigeVraag = vragen[index]
   const prompt = huidigeVraag
     ? (huidigeVraag.toonZijde1 ? huidigeVraag.card.side_1_text : huidigeVraag.card.side_2_text)
     : ''
@@ -82,13 +92,12 @@ export default function OefenManager({
     : ''
 
   function controleer() {
-    if (!antwoord.trim()) return
+    if (!antwoord.trim() || !huidigeVraag) return
     const correct = normaliseer(antwoord) === normaliseer(verwacht)
     if (correct) {
-      setGoedAantal((n) => n + 1)
+      setKlaarIds((prev) => new Set(prev).add(huidigeVraag.card.id))
       setStatus('goed')
     } else {
-      setFoutAantal((n) => n + 1)
       setStatus('fout')
     }
   }
@@ -99,15 +108,31 @@ export default function OefenManager({
   }
 
   function toonAntwoord() {
+    if (!huidigeVraag) return
+    setMoeiteIds((prev) => new Set(prev).add(huidigeVraag.card.id))
     setStatus('toonAntwoord')
   }
 
   function volgende() {
-    if (index + 1 >= vragen.length) {
+    if (!huidigeVraag) return
+
+    // Herhalingsfunctie: een kaartje waarvan het antwoord getoond is,
+    // gaat niet weg maar wordt achteraan de wachtrij gezet. Zo krijgt
+    // de gebruiker het later in dezelfde sessie nog een keer, net
+    // zolang tot hij het zelf goed beantwoordt.
+    const nieuweWachtrij =
+      status === 'toonAntwoord' ? [...wachtrij, huidigeVraag] : wachtrij
+
+    if (nieuweWachtrij.length === 0) {
       setFase('klaar')
+      setWachtrij([])
+      setHuidigeVraag(null)
       return
     }
-    setIndex((i) => i + 1)
+
+    const [volgendeVraag, ...rest] = nieuweWachtrij
+    setWachtrij(rest)
+    setHuidigeVraag(volgendeVraag)
     setAntwoord('')
     setStatus('idle')
   }
@@ -153,11 +178,15 @@ export default function OefenManager({
   }
 
   if (fase === 'klaar') {
+    const foutAantal = moeiteIds.size
+    const goedAantal = totaalKaarten - foutAantal
+
     return (
       <div className="mt-6 rounded-lg border p-6 text-center">
         <p className="text-lg font-semibold">Klaar geoefend!</p>
         <p className="mt-2 text-sm text-gray-500">
-          {goedAantal} goed &middot; {foutAantal} fout van de {vragen.length} kaartjes
+          {goedAantal} in één keer goed &middot; {foutAantal} met hulp geleerd
+          &middot; {totaalKaarten} kaartjes in totaal
         </p>
         <div className="mt-4 flex justify-center gap-2">
           <button
@@ -177,10 +206,14 @@ export default function OefenManager({
     )
   }
 
+  // fase === 'bezig'
+  const geleerd = klaarIds.size
+  const nogTeGaan = wachtrij.length + (huidigeVraag ? 1 : 0)
+
   return (
     <div className="mt-6">
       <p className="text-xs text-gray-400">
-        Kaart {index + 1} van {vragen.length}
+        Geleerd: {geleerd} van {totaalKaarten} &middot; nog {nogTeGaan} te gaan
       </p>
 
       <div className="mt-2 rounded-lg border p-6 text-center">
@@ -251,6 +284,9 @@ export default function OefenManager({
           <div className="mt-3">
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm">
               Juiste antwoord: <span className="font-semibold">{verwacht}</span>
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              Dit kaartje komt later nog een keer terug.
             </p>
             <button
               onClick={volgende}
