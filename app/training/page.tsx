@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import ModuleManager from './module-manager'
+import ExcelImport from './excel-import'
 
 export default async function TrainingPage() {
   const supabase = await createClient()
@@ -94,6 +95,13 @@ export default async function TrainingPage() {
       <p className="mt-1 text-sm text-gray-500">
         Maak flashcard-modules om woordjes of begrippen te oefenen en te toetsen.
       </p>
+
+      <ExcelImport
+        householdId={householdId}
+        currentUserId={user.id}
+        isParent={isParent}
+        leden={leden_met_naam}
+      />
 
       <ModuleManager
         householdId={householdId}
