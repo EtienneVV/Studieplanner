@@ -6,7 +6,6 @@ import HouseholdSetup from './household-setup'
 export default async function Home() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-
   if (!user) redirect('/login')
 
   const { data: memberships } = await supabase
@@ -59,6 +58,12 @@ export default async function Home() {
           className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
         >
           Vakken
+        </Link>
+        <Link
+          href="/training"
+          className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+        >
+          Training
         </Link>
       </div>
 
