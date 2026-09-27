@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
+import { spreekUit } from '@/lib/speech'
 
 type Vraag = {
   question_index: number
@@ -52,6 +53,16 @@ export default function ToetsManager({
     if (kant === 'vraag') return isS1NaarS2 ? side1Label : side2Label
     return isS1NaarS2 ? side2Label : side1Label
   }
+
+
+  useEffect(() => {
+    if (fase === 'vraag' && huidigeVraag && !feedback) {
+      spreekUit(
+        huidigeVraag.prompt,
+        labelVoor(huidigeVraag.direction, 'vraag')
+      )
+    }
+  }, [fase, huidigeVraag, feedback])
 
   async function startToets() {
     setBusy(true)
@@ -204,18 +215,46 @@ export default function ToetsManager({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs text-gray-500">{labelVoor(r.direction, 'vraag')}</p>
-                  <p className="font-medium">{r.prompt}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{r.prompt}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        spreekUit(r.prompt, labelVoor(r.direction, 'vraag'))
+                      }
+                      className="rounded-md border px-2 py-1"
+                      aria-label="Vraag beluisteren"
+                    >
+                      🔊
+                    </button>
+                  </div>
                 </div>
                 <span className="text-lg">{r.is_correct ? '\u2713' : '\u2717'}</span>
               </div>
               <p className="mt-1">
                 Jouw antwoord: <span className="font-medium">{r.submitted_answer}</span>
               </p>
-              {!r.is_correct && (
-                <p>
-                  Juiste antwoord: <span className="font-medium">{r.expected_answer}</span>
-                </p>
-              )}
+              <div className="mt-1 flex items-center gap-2">
+                {!r.is_correct && (
+                  <p>
+                    Juiste antwoord:{' '}
+                    <span className="font-medium">{r.expected_answer}</span>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    spreekUit(
+                      r.expected_answer,
+                      labelVoor(r.direction, 'antwoord')
+                    )
+                  }
+                  className="rounded-md border px-2 py-1"
+                  aria-label="Juiste antwoord beluisteren"
+                >
+                  🔊
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -234,7 +273,25 @@ export default function ToetsManager({
         <p className="text-xs uppercase tracking-wide text-gray-400">
           {huidigeVraag ? labelVoor(huidigeVraag.direction, 'vraag') : ''}
         </p>
-        <p className="mt-1 text-2xl font-semibold">{huidigeVraag?.prompt}</p>
+        <div className="mt-1 flex items-center justify-center gap-2">
+          <p className="text-2xl font-semibold">{huidigeVraag?.prompt}</p>
+          {huidigeVraag && (
+            <button
+              type="button"
+              onClick={() =>
+                spreekUit(
+                  huidigeVraag.prompt,
+                  labelVoor(huidigeVraag.direction, 'vraag')
+                )
+              }
+              className="rounded-md border px-2 py-1"
+              aria-label="Vraag beluisteren"
+              title="Vraag beluisteren"
+            >
+              🔊
+            </button>
+          )}
+        </div>
 
         <input
           value={antwoord}
@@ -265,6 +322,20 @@ export default function ToetsManager({
             <p className="rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
               Goed zo! &#10003;
             </p>
+            {huidigeVraag && (
+              <button
+                type="button"
+                onClick={() =>
+                  spreekUit(
+                    antwoord,
+                    labelVoor(huidigeVraag.direction, 'antwoord')
+                  )
+                }
+                className="mt-2 rounded-md border px-3 py-1"
+              >
+                🔊 Antwoord beluisteren
+              </button>
+            )}
             <button
               onClick={volgende}
               disabled={busy}
@@ -281,6 +352,20 @@ export default function ToetsManager({
               Niet correct. Juiste antwoord:{' '}
               <span className="font-semibold">{feedback.correct_answer}</span>
             </p>
+            {feedback.correct_answer && huidigeVraag && (
+              <button
+                type="button"
+                onClick={() =>
+                  spreekUit(
+                    feedback.correct_answer ?? '',
+                    labelVoor(huidigeVraag.direction, 'antwoord')
+                  )
+                }
+                className="mt-2 rounded-md border px-3 py-1"
+              >
+                🔊 Juiste antwoord beluisteren
+              </button>
+            )}
             <button
               onClick={volgende}
               disabled={busy}

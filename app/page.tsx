@@ -11,6 +11,7 @@ export default async function Home() {
   const { data: memberships } = await supabase
     .from('household_members')
     .select('role, households(id, name)')
+    .eq('user_id', user.id)
 
   return (
     <main className="mx-auto max-w-2xl p-6">

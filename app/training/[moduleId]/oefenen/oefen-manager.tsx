@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { spreekUit } from '@/lib/speech'
 
 type Card = { id: string; side_1_text: string; side_2_text: string }
 type Richting = 'S1_NAAR_S2' | 'S2_NAAR_S1' | 'GEMENGD'
@@ -90,6 +91,13 @@ export default function OefenManager({
   const antwoordLabel = huidigeVraag
     ? (huidigeVraag.toonZijde1 ? side2Label : side1Label)
     : ''
+
+
+  useEffect(() => {
+    if (fase === 'bezig' && huidigeVraag && prompt) {
+      spreekUit(prompt, promptLabel)
+    }
+  }, [fase, huidigeVraag, prompt, promptLabel])
 
   function controleer() {
     if (!antwoord.trim() || !huidigeVraag) return
@@ -218,7 +226,18 @@ export default function OefenManager({
 
       <div className="mt-2 rounded-lg border p-6 text-center">
         <p className="text-xs uppercase tracking-wide text-gray-400">{promptLabel}</p>
-        <p className="mt-1 text-2xl font-semibold">{prompt}</p>
+        <div className="mt-1 flex items-center justify-center gap-2">
+          <p className="text-2xl font-semibold">{prompt}</p>
+          <button
+            type="button"
+            onClick={() => spreekUit(prompt, promptLabel)}
+            className="rounded-md border px-2 py-1"
+            aria-label="Uitspraak herhalen"
+            title="Uitspraak herhalen"
+          >
+            🔊
+          </button>
+        </div>
 
         <input
           value={antwoord}
@@ -249,6 +268,18 @@ export default function OefenManager({
             <p className="rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
               Goed zo! &#10003;
             </p>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <span className="font-semibold">{verwacht}</span>
+              <button
+                type="button"
+                onClick={() => spreekUit(verwacht, antwoordLabel)}
+                className="rounded-md border px-2 py-1"
+                aria-label="Vertaling beluisteren"
+                title="Vertaling beluisteren"
+              >
+                🔊
+              </button>
+            </div>
             <button
               onClick={volgende}
               className="mt-3 w-full rounded-lg bg-black px-4 py-2 text-white"
@@ -284,6 +315,15 @@ export default function OefenManager({
           <div className="mt-3">
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm">
               Juiste antwoord: <span className="font-semibold">{verwacht}</span>
+              <button
+                type="button"
+                onClick={() => spreekUit(verwacht, antwoordLabel)}
+                className="ml-2 rounded-md border px-2 py-1"
+                aria-label="Juiste antwoord beluisteren"
+                title="Juiste antwoord beluisteren"
+              >
+                🔊
+              </button>
             </p>
             <p className="mt-1 text-xs text-gray-400">
               Dit kaartje komt later nog een keer terug.
