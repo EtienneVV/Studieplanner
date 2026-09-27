@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 type Lid = { user_id: string; role: string; display_name: string }
+type Stats = { pogingen: number; geslaagd: number }
 type Module = {
   id: string
   title: string
@@ -22,12 +23,14 @@ export default function ModuleManager({
   isParent,
   leden,
   initialModules,
+  statsPerModule,
 }: {
   householdId: string
   currentUserId: string
   isParent: boolean
   leden: Lid[]
   initialModules: Module[]
+  statsPerModule: Record<string, Stats>
 }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
@@ -98,6 +101,18 @@ export default function ModuleManager({
     )
   )
 
+  function StatsRegel({ m }: { m: Module }) {
+    const s = statsPerModule[m.id]
+    if (!s || s.pogingen === 0) {
+      return <p className="text-xs text-gray-400">Nog niet getoetst</p>
+    }
+    return (
+      <p className="text-xs text-gray-500">
+        Getoetst: {s.pogingen}&times; &middot; {s.geslaagd}&times; &ge;80%
+      </p>
+    )
+  }
+
   function ModuleRij({ m }: { m: Module }) {
     if (bewerkId === m.id) {
       return (
@@ -135,6 +150,7 @@ export default function ModuleManager({
           <p className="text-xs text-gray-500">
             {m.side_1_label} &rarr; {m.side_2_label}
           </p>
+          <StatsRegel m={m} />
         </div>
         <button
           onClick={() => { setBewerkId(m.id); setBewerkTitel(m.title) }}

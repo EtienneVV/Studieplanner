@@ -59,6 +59,29 @@ export default async function TrainingPage() {
     .eq('household_id', householdId)
     .order('created_at', { ascending: true })
 
+  const moduleIds = (modules ?? []).map((m) => m.id)
+
+  // Toetsstatistieken ophalen: alleen afgeronde pogingen tellen mee.
+  // score_percent wordt al door de database berekend bij afronding.
+  const { data: pogingen } = moduleIds.length > 0
+    ? await supabase
+        .from('training_test_attempts')
+        .select('module_id, score_percent')
+        .in('module_id', moduleIds)
+        .not('completed_at', 'is', null)
+    : { data: [] as { module_id: string; score_percent: number | null }[] }
+
+  const statsPerModule: Record<string, { pogingen: number; geslaagd: number }> = {}
+  for (const p of pogingen ?? []) {
+    if (!statsPerModule[p.module_id]) {
+      statsPerModule[p.module_id] = { pogingen: 0, geslaagd: 0 }
+    }
+    statsPerModule[p.module_id].pogingen += 1
+    if ((p.score_percent ?? 0) >= 80) {
+      statsPerModule[p.module_id].geslaagd += 1
+    }
+  }
+
   const modules_met_naam = (modules ?? []).map((m) => ({
     ...m,
     owner_naam: naamVan(m.owner_user_id),
@@ -78,6 +101,7 @@ export default async function TrainingPage() {
         isParent={isParent}
         leden={leden_met_naam}
         initialModules={modules_met_naam}
+        statsPerModule={statsPerModule}
       />
     </main>
   )
