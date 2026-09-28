@@ -73,12 +73,20 @@ export default async function Home() {
 
       <div className="mt-3 flex flex-wrap items-start gap-2">
         {isParent && (
-          <Link
-            href="/uitnodigen"
-            className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
-          >
-            Gezinslid uitnodigen
-          </Link>
+          <>
+            <Link
+              href="/uitnodigen"
+              className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+            >
+              Gezinslid uitnodigen
+            </Link>
+            <Link
+              href="/beheer"
+              className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+            >
+              Beheer
+            </Link>
+          </>
         )}
         <AccepteerUitnodiging />
       </div>
