@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import HouseholdSetup from './household-setup'
+import AccepteerUitnodiging from './accepteer-uitnodiging'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -12,6 +13,8 @@ export default async function Home() {
     .from('household_members')
     .select('role, households(id, name)')
     .eq('user_id', user.id)
+
+  const isParent = (memberships ?? []).some((m) => m.role === 'PARENT')
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -66,6 +69,18 @@ export default async function Home() {
         >
           Training
         </Link>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-start gap-2">
+        {isParent && (
+          <Link
+            href="/uitnodigen"
+            className="rounded-lg border px-4 py-2 font-medium hover:bg-gray-50"
+          >
+            Gezinslid uitnodigen
+          </Link>
+        )}
+        <AccepteerUitnodiging />
       </div>
 
       <form action="/auth/signout" method="post" className="mt-6">
